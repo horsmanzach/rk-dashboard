@@ -1,90 +1,56 @@
 /**
- * Aggregate data by time period (weekly or monthly)
+ * Dashboard Charts - Overview Chart
+ * Displays 24 months of data in monthly view
+ * 3 series: Total Google Ads Spend, Total Meta Ads Spend, Total TV/Radio Ads
+ * Initial view shows last 12 months, pan left to view prior 12 months
  */
-function aggregateDataByPeriod(data, period = 'weekly') {
-    // This will aggregate your data into weekly or monthly buckets
-    // Returns arrays of values aligned to same time periods
 
-    const timeLabels = generateTimeLabels(period);
-    const aggregated = {};
+// Global chart reference
+let welcomeChart = null;
+let chartInitialized = false;
 
-    // Initialize buckets
-    timeLabels.forEach(label => {
-        aggregated[label] = {
-            googleSpend: 0,
-            metaSpend: 0,
-            syracuseAds: 0,
-            albanyAds: 0,
-            montrealAds: 0
-        };
-    });
+// ============================================================
+// INITIALIZATION
+// ============================================================
 
-    return { timeLabels, aggregated };
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChart);
+} else {
+    initChart();
 }
 
-/**
- * Generate time labels based on period
- */
-function generateTimeLabels(period = 'weekly', count = 12) {
-    const labels = [];
-    const now = new Date();
+window.addEventListener('load', initChart);
 
-    if (period === 'weekly') {
-        for (let i = count - 1; i >= 0; i--) {
-            const weekStart = new Date(now);
-            weekStart.setDate(now.getDate() - (i * 7));
-
-            // Get to Monday of that week (CRITICAL for Google Ads alignment)
-            const dayOfWeek = weekStart.getDay();
-            const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-            weekStart.setDate(weekStart.getDate() - daysToMonday);
-
-            // Format as "Dec 15" (Monday of that week)
-            const month = weekStart.toLocaleDateString('en-US', { month: 'short' });
-            const day = weekStart.getDate();
-
-            labels.push(`${month} ${day}`);
-        }
-    } else if (period === 'monthly') {
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        for (let i = count - 1; i >= 0; i--) {
-            const date = new Date(now);
-            date.setMonth(now.getMonth() - i);
-            labels.push(months[date.getMonth()] + ' ' + date.getFullYear());
-        }
+function initChart() {
+    if (chartInitialized) return;
+    const container = document.querySelector("#welcomeUnifiedChart");
+    if (!container) {
+        console.error('❌ Chart container not found!');
+        return;
     }
-
-    return labels;
+    chartInitialized = true;
+    console.log('🚀 Initializing chart...');
+    setTimeout(() => {
+        fetchWelcomeChartData();
+    }, 500);
 }
 
-/**
- * Get week number from date
- */
-function getWeekNumber(date) {
-    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-    const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
-    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-}
+// ============================================================
+// DATA FETCHING
+// ============================================================
 
-/**
- * Fetch and aggregate all data for welcome chart
- */
 async function fetchWelcomeChartData() {
     try {
-        // Show loading state
         showChartLoading();
 
-        // Fetch all data sources in parallel
         const [googleData, metaData, tvRadioData] = await Promise.all([
             fetchGoogleAdsOverview(),
             fetchMetaAdsOverview(),
             fetchAllTVRadioData()
         ]);
 
-        // Process and aggregate the data
         const chartData = processWelcomeData(googleData, metaData, tvRadioData);
 
-        // Update or create the chart
         if (welcomeChart) {
             welcomeChart.updateOptions({
                 series: chartData.series,
@@ -97,21 +63,14 @@ async function fetchWelcomeChartData() {
         hideChartLoading();
 
     } catch (error) {
-        console.error('Error fetching welcome chart data:', error);
+        console.error('❌ Error fetching welcome chart data:', error);
         showChartError();
     }
 }
 
-/**
- * Fetch Google Ads overview data
- */
-
-/**
- * Fetch Google Ads overview data
- */
 async function fetchGoogleAdsOverview() {
     const formData = new FormData();
-    formData.append('action', 'fetch_google_ads_campaigns'); // Uses existing endpoint!
+    formData.append('action', 'fetch_google_ads_summary');
     formData.append('nonce', dashboardConfig.nonce);
 
     const response = await fetch(dashboardConfig.ajaxUrl, {
@@ -122,15 +81,14 @@ async function fetchGoogleAdsOverview() {
     const result = await response.json();
 
     if (result.success && result.data) {
-        return result.data; // Returns campaigns with weeklyBreakdown
+        console.log('✅ Google Ads Overview:', result.data);
+        return result.data;
     }
 
-    throw new Error('Failed to fetch Google Ads data');
+    console.warn('⚠️ Google Ads Overview fetch failed:', result);
+    return { campaigns: [] };
 }
 
-/**
- * Fetch Meta Ads overview data
- */
 async function fetchMetaAdsOverview() {
     const formData = new FormData();
     formData.append('action', 'fetch_facebook_ads_summary');
@@ -143,21 +101,16 @@ async function fetchMetaAdsOverview() {
 
     const result = await response.json();
 
-    if (result.success) {
+    if (result.success && result.data) {
+        console.log('✅ Meta Ads Overview:', result.data);
         return result.data;
     }
 
-    throw new Error('Failed to fetch Meta Ads data');
+    console.warn('⚠️ Meta Ads Overview fetch failed:', result);
+    return { campaigns: [] };
 }
 
-/**
- * Fetch all TV/Radio data from stations
- */
 async function fetchAllTVRadioData() {
-    // Fetch all station data
-    const formData = new FormData();
-    formData.append('nonce', dashboardConfig.nonce);
-
     const [wtla, wkrl, wktw, wzun] = await Promise.all([
         fetch(dashboardConfig.ajaxUrl, {
             method: 'POST',
@@ -201,439 +154,196 @@ async function fetchAllTVRadioData() {
     ]);
 
     return {
-        syracuse: {
-            wtla: wtla.success ? wtla.data : null,
-            wkrl: wkrl.success ? wkrl.data : null,
-            wktw: wktw.success ? wktw.data : null,
-            wzun: wzun.success ? wzun.data : null
-        },
-        albany: null, // Add when you have Albany data
-        montreal: null // Add when you have Montreal data
+        wtla: wtla.success ? wtla.data : null,
+        wkrl: wkrl.success ? wkrl.data : null,
+        wktw: wktw.success ? wktw.data : null,
+        wzun: wzun.success ? wzun.data : null
     };
 }
 
-/**
- * Process Google Ads data for chart
- */
-function processGoogleAdsForChart(googleData, weekLabels) {
-    if (!googleData.campaigns || googleData.campaigns.length === 0) {
-        return [];
-    }
-
-    // Get top 5 campaigns by spend
-    const topCampaigns = [...googleData.campaigns]
-        .sort((a, b) => b.spend - a.spend)
-        .slice(0, 5);
-
-    // Create series for each campaign
-    const campaignSeries = topCampaigns.map(campaign => {
-        // Initialize data array with zeros
-        const weeklyData = new Array(weekLabels.length).fill(0);
-
-        // Fill in actual weekly spend
-        if (campaign.weeklyBreakdown) {
-            campaign.weeklyBreakdown.forEach(week => {
-                // Convert week date to label format (e.g., "2025-01-13" → "Jan 13")
-                const weekDate = new Date(week.week);
-                const weekLabel = weekDate.toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                });
-
-                // Find matching label index
-                const labelIndex = weekLabels.findIndex(label => label === weekLabel);
-                if (labelIndex !== -1) {
-                    weeklyData[labelIndex] = week.spend;
-                }
-            });
-        }
-
-        return {
-            name: campaign.name,
-            type: 'column',
-            data: weeklyData
-        };
-    });
-
-    return campaignSeries;
-}
+// ============================================================
+// DATA PROCESSING
+// ============================================================
 
 /**
- * Process all data into chart-ready format
+ * Generate 24 monthly labels going back from current month
+ * Returns array like ["Apr 2023", "May 2023", ..., "Mar 2026"]
  */
-
-function processWelcomeData(googleData, metaData, tvRadioData) {
-    console.log('📊 Processing welcome chart data...');
-
-    // Generate weekly labels for last 12 weeks
-    const labels = generateTimeLabels('weekly', 12);
-    console.log('📅 Time labels:', labels);
-
-    // Initialize all series arrays
-    let allSeries = [];
-
-    // ========================================
-    // PROCESS GOOGLE ADS DATA
-    // ========================================
-    if (googleData && googleData.campaigns && googleData.campaigns.length > 0) {
-        console.log(`🔵 Processing ${googleData.campaigns.length} Google Ads campaigns`);
-
-        // Get top 5 campaigns by spend
-        const topGoogleCampaigns = [...googleData.campaigns]
-            .sort((a, b) => b.spend - a.spend)
-            .slice(0, 5);
-
-        console.log('🔵 Top 5 Google campaigns:', topGoogleCampaigns.map(c => c.name));
-
-        // Create series for each Google campaign
-        topGoogleCampaigns.forEach(campaign => {
-            // Initialize weekly data array with zeros
-            const weeklyData = new Array(labels.length).fill(0);
-
-            // Fill in actual weekly spend from weeklyBreakdown
-            if (campaign.weeklyBreakdown && campaign.weeklyBreakdown.length > 0) {
-                campaign.weeklyBreakdown.forEach(weekPoint => {
-                    // Convert week date (YYYY-MM-DD format) to label format (e.g., "Jan 13")
-                    const [year, month, day] = weekPoint.week.split('-').map(Number);
-                    const weekDate = new Date(year, month - 1, day);
-                    const monthStr = weekDate.toLocaleDateString('en-US', { month: 'short' });
-                    const dayNum = weekDate.getDate();
-                    const weekLabel = `${monthStr} ${dayNum}`;
-
-                    // Find matching label index
-                    const labelIndex = labels.indexOf(weekLabel);
-
-                    if (labelIndex !== -1) {
-                        weeklyData[labelIndex] = weekPoint.spend;
-                        console.log(`✅ Matched! $${weekPoint.spend} → index ${labelIndex}`);
-                    }
-                });
-
-                console.log(`  ✓ ${campaign.name}: ${campaign.weeklyBreakdown.length} weeks of data`);
-            } else {
-                console.log(`  ⚠️ ${campaign.name}: No weekly breakdown available`);
-            }
-
-            allSeries.push({
-                name: `Google: ${campaign.name}`,
-                type: 'column',
-                data: weeklyData,
-                yAxisIndex: 0  // Use first Y-axis (Ad Spend $)
-            });
-        });
-    } else {
-        console.log('⚠️ No Google Ads data available');
-    }
-
-    // ========================================
-    // PROCESS META ADS DATA
-    // ========================================
-    if (metaData && metaData.campaigns && metaData.campaigns.length > 0) {
-        console.log(`🔵 Processing ${metaData.campaigns.length} Meta Ads campaigns`);
-
-        // Get top 5 Meta campaigns by spend
-        const topMetaCampaigns = [...metaData.campaigns]
-            .sort((a, b) => b.spend - a.spend)
-            .slice(0, 5);
-
-        console.log('🔵 Top 5 Meta campaigns:', topMetaCampaigns.map(c => c.name));
-
-        // Create series for each Meta campaign
-        topMetaCampaigns.forEach(campaign => {
-            // Initialize weekly data array with zeros
-            const weeklyData = new Array(labels.length).fill(0);
-
-            // Fill in actual weekly spend from weeklyBreakdown
-            if (campaign.weeklyBreakdown && campaign.weeklyBreakdown.length > 0) {
-                campaign.weeklyBreakdown.forEach(weekPoint => {
-                    // Convert week date to label format
-                    const [year, month, day] = weekPoint.week.split('-').map(Number);
-                    const weekDate = new Date(year, month - 1, day);
-                    const monthStr = weekDate.toLocaleDateString('en-US', { month: 'short' });
-                    const dayNum = weekDate.getDate();
-                    const weekLabel = `${monthStr} ${dayNum}`;
-
-                    // Find matching label index
-                    const labelIndex = labels.indexOf(weekLabel);
-
-                    if (labelIndex !== -1) {
-                        weeklyData[labelIndex] = weekPoint.spend;
-                    }
-                });
-
-                console.log(`  ✓ ${campaign.name}: ${campaign.weeklyBreakdown.length} weeks of data`);
-            } else {
-                console.log(`  ⚠️ ${campaign.name}: No weekly breakdown available`);
-            }
-
-            allSeries.push({
-                name: `Meta: ${campaign.name}`,
-                type: 'column',
-                data: weeklyData,
-                yAxisIndex: 0  // Use first Y-axis (Ad Spend $)
-            });
-        });
-    } else {
-        console.log('⚠️ No Meta Ads data available');
-    }
-
-    // ========================================
-    // PROCESS TV/RADIO DATA - SYRACUSE
-    // ========================================
-    const syracuseAds = new Array(labels.length).fill(0);
-    if (tvRadioData && tvRadioData.syracuse) {
-        console.log('📺 Processing Syracuse/Rochester TV/Radio data');
-        const syracuseTotal = aggregateStationDataByWeek(tvRadioData.syracuse, labels);
-
-        if (syracuseTotal && syracuseTotal.length > 0) {
-            syracuseAds.splice(0, syracuseTotal.length, ...syracuseTotal);
-            console.log('  ✓ Syracuse data aggregated');
-        }
-
-        allSeries.push({
-            name: 'Syracuse/Rochester Ads',
-            type: 'line',
-            data: syracuseAds,
-            yAxisIndex: 1  // Use second Y-axis (TV/Radio Ads count)
-        });
-    } else {
-        console.log('⚠️ No Syracuse TV/Radio data available');
-    }
-
-    // ========================================
-    // PROCESS TV/RADIO DATA - ALBANY
-    // ========================================
-    if (tvRadioData && tvRadioData.albany) {
-        console.log('📺 Processing Albany DMA TV/Radio data');
-        const albanyAds = new Array(labels.length).fill(0);
-        const albanyTotal = aggregateStationDataByWeek(tvRadioData.albany, labels);
-
-        if (albanyTotal && albanyTotal.length > 0) {
-            albanyAds.splice(0, albanyTotal.length, ...albanyTotal);
-            console.log('  ✓ Albany data aggregated');
-
-            allSeries.push({
-                name: 'Albany DMA Ads',
-                type: 'line',
-                data: albanyAds,
-                yAxisIndex: 1  // Use second Y-axis (TV/Radio Ads count)
-            });
-        }
-    }
-
-    // ========================================
-    // PROCESS TV/RADIO DATA - MONTREAL
-    // ========================================
-    if (tvRadioData && tvRadioData.montreal) {
-        console.log('📺 Processing Montreal/Plattsburgh TV/Radio data');
-        const montrealAds = new Array(labels.length).fill(0);
-        const montrealTotal = aggregateStationDataByWeek(tvRadioData.montreal, labels);
-
-        if (montrealTotal && montrealTotal.length > 0) {
-            montrealAds.splice(0, montrealTotal.length, ...montrealTotal);
-            console.log('  ✓ Montreal data aggregated');
-
-            allSeries.push({
-                name: 'Montreal/Plattsburgh Ads',
-                type: 'line',
-                data: montrealAds,
-                yAxisIndex: 1  // Use second Y-axis (TV/Radio Ads count)
-            });
-        }
-    }
-
-    console.log(`✅ Total series created: ${allSeries.length}`);
-    console.log('📊 Series breakdown:', allSeries.map(s => `${s.name} (${s.type})`));
-
-    return {
-        labels,
-        series: allSeries
-    };
-}
-
-/**
- * Aggregate station data by week
- */
-
-/**
- * Aggregate station data by week
- * Used for TV/Radio data aggregation
- */
-function aggregateStationDataByWeek(stationData, weekLabels) {
-    const weeklyData = new Array(weekLabels.length).fill(0);
-
-    // Combine all stations (WTLA, WKRL, WKTW, WZUN, etc.)
-    const allOrders = [];
-
-    // Handle both object format (syracuse stations) and direct data format
-    const processOrders = (data) => {
-        if (!data) return;
-
-        // If data has 'orders' property, use it directly
-        if (data.orders) {
-            Object.values(data.orders).forEach(order => {
-                if (order.dailyBreakdown) {
-                    order.dailyBreakdown.forEach(day => {
-                        const parsedDate = parseDate(day.date);
-                        if (parsedDate) { // Only add if date parsed successfully
-                            allOrders.push({
-                                date: parsedDate,
-                                adCount: day.adCount
-                            });
-                        }
-                    });
-                }
-            });
-        }
-    };
-
-    // Check if stationData is an object with station keys (wtla, wkrl, etc.)
-    if (typeof stationData === 'object') {
-        Object.keys(stationData).forEach(stationKey => {
-            const station = stationData[stationKey];
-            processOrders(station);
-        });
-    } else {
-        processOrders(stationData);
-    }
-
-    if (allOrders.length === 0) {
-        console.log('  ⚠️ No orders found in station data');
-        return weeklyData;
-    }
-
-    // Sort by date
-    allOrders.sort((a, b) => a.date - b.date);
-
-    // Aggregate by week (CRITICAL: align to Monday)
+function generateMonthlyLabels(count = 24) {
+    const labels = [];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
-    weekLabels.forEach((label, index) => {
-        // Calculate week start date based on label index
-        const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - ((weekLabels.length - 1 - index) * 7));
 
-        // Week runs Monday to Sunday (align to Monday)
-        const dayOfWeek = weekStart.getDay();
-        const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-        weekStart.setDate(weekStart.getDate() - daysToMonday);
-        weekStart.setHours(0, 0, 0, 0);
+    for (let i = count - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        labels.push(`${months[d.getMonth()]} ${d.getFullYear()}`);
+    }
 
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 7);
-
-        const weekTotal = allOrders
-            .filter(order => order.date >= weekStart && order.date < weekEnd)
-            .reduce((sum, order) => sum + order.adCount, 0);
-
-        weeklyData[index] = weekTotal;
-    });
-
-    console.log(`  📊 Weekly totals:`, weeklyData);
-    return weeklyData;
+    return labels;
 }
 
 /**
- * Parse date string (MM/DD/YY format) to Date object
+ * Get month label string from a YYYY-MM-DD date string
  */
+function getMonthLabel(dateStr) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const [year, month] = dateStr.split('-').map(Number);
+    return `${months[month - 1]} ${year}`;
+}
 
-function parseDate(dateStr) {
+/**
+ * Parse MM/DD/YY date string (used by radio station data)
+ */
+function parseRadioDate(dateStr) {
     if (!dateStr || dateStr === 'N/A' || dateStr === '-') return null;
-
     try {
         const [month, day, year] = dateStr.split('/');
-
-        // Convert 2-digit year to 4-digit
         const yearNum = parseInt(year);
         const fullYear = yearNum < 100
             ? (yearNum >= 50 ? 1900 + yearNum : 2000 + yearNum)
             : yearNum;
-
-        const date = new Date(fullYear, parseInt(month) - 1, parseInt(day));
-
-        // Validate the date
-        if (isNaN(date.getTime())) {
-            console.warn(`Invalid date: ${dateStr}`);
-            return null;
-        }
-
-        return date;
-    } catch (error) {
-        console.warn(`Error parsing date: ${dateStr}`, error);
+        return new Date(fullYear, parseInt(month) - 1, parseInt(day));
+    } catch (e) {
         return null;
     }
 }
 
 /**
- * Show loading state for chart
+ * Main data processing function
+ * Aggregates all sources into 3 monthly series
  */
-function showChartLoading() {
-    const container = document.querySelector("#welcomeUnifiedChart");
-    if (container) {
-        container.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; height: 450px; color: #999;">
-                <div style="text-align: center;">
-                    <div class="spinner" style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
-                    <p>Loading chart data...</p>
-                </div>
-            </div>
-        `;
+function processWelcomeData(googleData, metaData, tvRadioData) {
+    console.log('📊 Processing welcome chart data...');
+
+    const labels = generateMonthlyLabels(24);
+    console.log('📅 Monthly labels:', labels);
+
+    // Initialize totals arrays
+    const googleTotals = new Array(labels.length).fill(0);
+    const metaTotals = new Array(labels.length).fill(0);
+    const radioTotals = new Array(labels.length).fill(0);
+
+    // ---- GOOGLE ADS ----
+    // Meta response has campaigns with weeklyBreakdown
+    // For Google the response comes from fetch_google_ads_summary
+    // which proxies google-ads-campaigns — campaigns have weeklyBreakdown
+    const googleCampaigns = googleData.campaigns || [];
+    console.log(`🔵 Processing ${googleCampaigns.length} Google campaigns`);
+
+    googleCampaigns.forEach(campaign => {
+        if (!campaign.weeklyBreakdown || campaign.weeklyBreakdown.length === 0) {
+            console.warn(`  ⚠️ ${campaign.name}: no weeklyBreakdown`);
+            return;
+        }
+        campaign.weeklyBreakdown.forEach(week => {
+            const monthLabel = getMonthLabel(week.week);
+            const idx = labels.indexOf(monthLabel);
+            if (idx !== -1) {
+                googleTotals[idx] += week.spend || 0;
+            }
+        });
+    });
+
+    // ---- META ADS ----
+    // fetch_facebook_ads_summary returns { campaigns, chartData }
+    // chartData.campaigns have weeklyBreakdown with historical data
+    // campaigns (top level) are the active card campaigns — use chartData for chart
+    let metaCampaigns = [];
+    if (metaData.chartData && metaData.chartData.campaigns) {
+        metaCampaigns = metaData.chartData.campaigns;
+        console.log(`🔵 Processing ${metaCampaigns.length} Meta campaigns from chartData`);
+    } else if (metaData.campaigns) {
+        metaCampaigns = metaData.campaigns;
+        console.log(`🔵 Processing ${metaCampaigns.length} Meta campaigns (fallback)`);
     }
+
+    metaCampaigns.forEach(campaign => {
+        if (!campaign.weeklyBreakdown || campaign.weeklyBreakdown.length === 0) {
+            console.warn(`  ⚠️ Meta ${campaign.name}: no weeklyBreakdown`);
+            return;
+        }
+        campaign.weeklyBreakdown.forEach(week => {
+            const monthLabel = getMonthLabel(week.week);
+            const idx = labels.indexOf(monthLabel);
+            if (idx !== -1) {
+                metaTotals[idx] += week.spend || 0;
+            }
+        });
+    });
+
+    // ---- TV/RADIO ----
+    // Process all 4 stations and aggregate ad counts by month
+    const stations = ['wtla', 'wkrl', 'wktw', 'wzun'];
+    stations.forEach(stationKey => {
+        const stationData = tvRadioData[stationKey];
+        if (!stationData || !stationData.orders) return;
+
+        console.log(`📻 Processing ${stationKey}`);
+        stationData.orders.forEach(order => {
+            if (!order.dailyBreakdown) return;
+            order.dailyBreakdown.forEach(day => {
+                const date = parseRadioDate(day.date);
+                if (!date) return;
+
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const monthLabel = `${months[date.getMonth()]} ${date.getFullYear()}`;
+                const idx = labels.indexOf(monthLabel);
+                if (idx !== -1) {
+                    radioTotals[idx] += day.adCount || 0;
+                }
+            });
+        });
+    });
+
+    // Round spend values to 2 decimal places
+    const googleRounded = googleTotals.map(v => parseFloat(v.toFixed(2)));
+    const metaRounded = metaTotals.map(v => parseFloat(v.toFixed(2)));
+
+    console.log('✅ Google monthly totals:', googleRounded);
+    console.log('✅ Meta monthly totals:', metaRounded);
+    console.log('✅ Radio monthly totals:', radioTotals);
+
+    return {
+        labels,
+        series: [
+            {
+                name: 'Total Google Ads',
+                type: 'bar',
+                data: googleRounded
+            },
+            {
+                name: 'Total Meta Ads',
+                type: 'bar',
+                data: metaRounded
+            },
+            {
+                name: 'Total TV / Radio Ads',
+                type: 'line',
+                data: radioTotals
+            }
+        ]
+    };
 }
 
-/**
- * Hide loading state
- */
-function hideChartLoading() {
-    // Chart render will replace the loading content
-}
-
-/**
- * Show error state
- */
-function showChartError() {
-    const container = document.querySelector("#welcomeUnifiedChart");
-    if (container) {
-        container.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; height: 450px; color: #999;">
-                <div style="text-align: center;">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
-                    <p>Error loading chart data</p>
-                    <button onclick="fetchWelcomeChartData()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                        Retry
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-}
-
-// Add spinner animation to your CSS
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-`;
-document.head.appendChild(style);
-
-/**
- * Update createWelcomeChart to accept data parameter
- */
+// ============================================================
+// CHART CREATION
+// ============================================================
 
 function createWelcomeChart(chartData) {
-    // Determine colors dynamically
-    const googleColors = ['#34a853', '#4285f4', '#fbbc04', '#ea4335', '#46bdc6']; // Google brand colors
-    const metaColors = ['#1877f2', '#0668e1', '#0a7cff']; // Meta brand colors
-    const tvRadioColors = ['#ff6b6b', '#feca57', '#ee5a6f'];
+    const allLabels = chartData.labels;
+    const totalMonths = allLabels.length; // 24
 
-    // Build stroke widths (0 for columns, 4 for lines)
-    const strokeWidths = chartData.series.map(s => s.type === 'line' ? 4 : 0);
+    // Set initial view to last 12 months
+    const initialMin = allLabels[totalMonths - 12];
+    const initialMax = allLabels[totalMonths - 1];
 
     const options = {
         series: chartData.series,
         chart: {
-            height: 450,
+            height: 480,
             type: 'line',
             stacked: false,
             toolbar: {
@@ -647,75 +357,84 @@ function createWelcomeChart(chartData) {
                     pan: true,
                     reset: true
                 }
+            },
+            zoom: {
+                enabled: true,
+                type: 'x',
+                autoScaleYaxis: true
+            },
+            animations: {
+                enabled: true,
+                easing: 'easeinout',
+                speed: 600
+            },
+            events: {
+                mounted: function(chart) {
+                    // Set initial zoom to last 12 months
+                    chart.zoomX(
+                        allLabels.indexOf(initialMin),
+                        allLabels.indexOf(initialMax)
+                    );
+                }
             }
         },
-        colors: [...googleColors, ...metaColors, ...tvRadioColors],
+        colors: ['#4285f4', '#1877f2', '#ff6b6b'],
         stroke: {
-            width: strokeWidths,
+            width: [0, 0, 3],
             curve: 'smooth'
         },
         plotOptions: {
             bar: {
-                columnWidth: '55%',
-                borderRadius: 4
+                columnWidth: '60%',
+                borderRadius: 3
             }
         },
         fill: {
-            opacity: 0.85,
-            gradient: {
-                shade: 'light',
-                type: "vertical",
-                opacityFrom: 0.85,
-                opacityTo: 0.55,
-                stops: [0, 100]
-            }
+            opacity: [0.85, 0.85, 1]
         },
-        labels: chartData.labels,
         markers: {
-            size: strokeWidths.map(w => w > 0 ? 5 : 0),
+            size: [0, 0, 4],
             strokeWidth: 2,
-            hover: { size: 7 }
+            hover: { size: 6 }
         },
         xaxis: {
+            categories: allLabels,
             type: 'category',
             title: {
-                text: 'Week Starting',
-                style: {
-                    fontSize: '14px',
-                    fontWeight: 600
-                }
+                text: 'Month',
+                style: { fontSize: '13px', fontWeight: 600 }
+            },
+            tickPlacement: 'on',
+            labels: {
+                rotate: -45,
+                rotateAlways: false,
+                style: { fontSize: '11px' }
             }
         },
         yaxis: [
             {
+                seriesName: 'Total Google Ads',
                 title: {
                     text: 'Ad Spend ($)',
-                    style: {
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: '#4285f4'
-                    }
+                    style: { fontSize: '13px', fontWeight: 600, color: '#4285f4' }
                 },
                 labels: {
-                    formatter: function (val) {
-                        return '$' + Math.round(val).toLocaleString();
-                    }
+                    formatter: val => '$' + Math.round(val).toLocaleString()
                 }
             },
             {
+                seriesName: 'Total Meta Ads',
+                show: false // Same axis as Google
+            },
+            {
+                seriesName: 'Total TV / Radio Ads',
                 opposite: true,
                 title: {
-                    text: 'TV/Radio Ads Played',
-                    style: {
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: '#ff6b6b'
-                    }
+                    text: 'TV / Radio Ads Played',
+                    style: { fontSize: '13px', fontWeight: 600, color: '#ff6b6b' }
                 },
                 labels: {
-                    formatter: function (val) {
-                        return Math.round(val) + ' ads';
-                    }
+                    formatter: val => Math.round(val) + ' ads'
                 }
             }
         ],
@@ -723,41 +442,39 @@ function createWelcomeChart(chartData) {
             shared: true,
             intersect: false,
             y: {
-                formatter: function (val, opts) {
-                    const seriesType = opts.w.config.series[opts.seriesIndex].type;
-                    if (seriesType === 'line') {
+                formatter: function(val, opts) {
+                    const name = opts.w.config.series[opts.seriesIndex].name;
+                    if (name === 'Total TV / Radio Ads') {
                         return Math.round(val) + ' ads played';
                     }
-                    return '$' + Math.round(val).toLocaleString();
+                    return '$' + val.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
                 }
             }
         },
         legend: {
             position: 'top',
             horizontalAlign: 'center',
-            offsetY: 0,
             fontSize: '13px',
-            markers: {
-                width: 12,
-                height: 12,
-                radius: 2
-            }
+            markers: { width: 12, height: 12, radius: 2 }
         },
         title: {
-            text: 'Marketing Performance Overview - Top Campaigns',
+            text: 'Marketing Performance Overview',
             align: 'center',
-            style: {
-                fontSize: '20px',
-                fontWeight: 600
-            }
+            style: { fontSize: '20px', fontWeight: 600 }
         },
         subtitle: {
-            text: 'Showing top 5 Google Ads campaigns by spend + Syracuse/Rochester TV/Radio',
+            text: 'Showing last 12 months — pan left to view prior history',
             align: 'center',
-            style: {
-                fontSize: '12px',
-                color: '#999'
-            }
+            style: { fontSize: '12px', color: '#999' }
+        },
+        noData: {
+            text: 'Loading data...',
+            align: 'center',
+            verticalAlign: 'middle',
+            style: { fontSize: '16px', color: '#999' }
         }
     };
 
@@ -767,32 +484,44 @@ function createWelcomeChart(chartData) {
     return welcomeChart;
 }
 
+// ============================================================
+// LOADING / ERROR STATES
+// ============================================================
 
-// Global chart reference
-let welcomeChart = null;
-
-// Initialization code...
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initChart);
-} else {
-    initChart();
-}
-
-window.addEventListener('load', initChart);
-
-let chartInitialized = false;
-
-function initChart() {
-    if (chartInitialized) return;
-    console.log('🚀 Initializing chart...');
+function showChartLoading() {
     const container = document.querySelector("#welcomeUnifiedChart");
-    if (!container) {
-        console.error('❌ Chart container not found!');
-        return;
+    if (container) {
+        container.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;height:450px;color:#999;">
+                <div style="text-align:center;">
+                    <div style="width:50px;height:50px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1rem;"></div>
+                    <p>Loading chart data...</p>
+                </div>
+            </div>`;
     }
-    chartInitialized = true;
-    setTimeout(() => {
-        console.log('⏰ Fetching chart data...');
-        fetchWelcomeChartData();
-    }, 500);
 }
+
+function hideChartLoading() {
+    // Chart render replaces loading content automatically
+}
+
+function showChartError() {
+    const container = document.querySelector("#welcomeUnifiedChart");
+    if (container) {
+        container.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;height:450px;color:#999;">
+                <div style="text-align:center;">
+                    <div style="font-size:3rem;margin-bottom:1rem;">⚠️</div>
+                    <p>Error loading chart data</p>
+                    <button onclick="fetchWelcomeChartData()" style="margin-top:1rem;padding:0.5rem 1rem;background:#667eea;color:white;border:none;border-radius:5px;cursor:pointer;">
+                        Retry
+                    </button>
+                </div>
+            </div>`;
+    }
+}
+
+// Spinner CSS
+const spinStyle = document.createElement('style');
+spinStyle.textContent = `@keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }`;
+document.head.appendChild(spinStyle);
