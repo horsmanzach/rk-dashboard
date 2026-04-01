@@ -841,3 +841,8 @@ function fetch_google_ads_data() {
 add_action('wp_ajax_fetch_google_ads', 'fetch_google_ads_data');
 add_action('wp_ajax_nopriv_fetch_google_ads', 'fetch_google_ads_data');
 
+
+
+
+
+
