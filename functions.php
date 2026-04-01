@@ -44,7 +44,7 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.0.1', // Increment version to bust cache
+        '1.0.99', // Increment version to bust cache
         true
     );
     
@@ -76,7 +76,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js', // Note: dashboard-charts.js with 's'
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.0.3', // Increment to bust cache
+        '1.1.0', // Increment to bust cache
         true
     );
     
@@ -775,13 +775,26 @@ add_action('wp_ajax_nopriv_fetch_facebook_campaign_adsets', 'fetch_facebook_camp
 function fetch_google_ads_summary() {
     check_ajax_referer('dashboard_nonce', 'nonce');
     
-    // For now, return empty data structure
-    // TODO: Fetch and aggregate real Google Ads data
-    wp_send_json_success(array(
-        'campaigns' => array(),
-        'totalSpend' => 0,
-        'weeklyData' => array()
+    $response = wp_remote_get('https://automation.magnawebservices.com/webhook/google-ads-campaigns', array(
+        'timeout' => 30,
+        'sslverify' => true,
+        'headers' => array('Accept' => 'application/json')
     ));
+    
+    if (is_wp_error($response)) {
+        wp_send_json_error(array('message' => 'Network error', 'type' => 'network_error'));
+        return;
+    }
+    
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE || !isset($data['campaigns'])) {
+        wp_send_json_error(array('message' => 'Invalid response', 'type' => 'invalid_structure'));
+        return;
+    }
+    
+    wp_send_json_success($data);
 }
 add_action('wp_ajax_fetch_google_ads_summary', 'fetch_google_ads_summary');
 add_action('wp_ajax_nopriv_fetch_google_ads_summary', 'fetch_google_ads_summary');
@@ -792,13 +805,26 @@ add_action('wp_ajax_nopriv_fetch_google_ads_summary', 'fetch_google_ads_summary'
 function fetch_facebook_ads_summary() {
     check_ajax_referer('dashboard_nonce', 'nonce');
     
-    // For now, return empty data structure
-    // TODO: Fetch and aggregate real Facebook Ads data
-    wp_send_json_success(array(
-        'campaigns' => array(),
-        'totalSpend' => 0,
-        'weeklyData' => array()
+    $response = wp_remote_get('https://automation.magnawebservices.com/webhook/facebook-ads-data', array(
+        'timeout' => 30,
+        'sslverify' => true,
+        'headers' => array('Accept' => 'application/json')
     ));
+    
+    if (is_wp_error($response)) {
+        wp_send_json_error(array('message' => 'Network error', 'type' => 'network_error'));
+        return;
+    }
+    
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE || !isset($data['campaigns'])) {
+        wp_send_json_error(array('message' => 'Invalid response', 'type' => 'invalid_structure'));
+        return;
+    }
+    
+    wp_send_json_success($data);
 }
 add_action('wp_ajax_fetch_facebook_ads_summary', 'fetch_facebook_ads_summary');
 add_action('wp_ajax_nopriv_fetch_facebook_ads_summary', 'fetch_facebook_ads_summary');
