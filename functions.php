@@ -74,9 +74,9 @@ add_action('wp_enqueue_scripts', 'enqueue_apexcharts');
 function enqueue_dashboard_chart_script() {
     wp_enqueue_script(
         'dashboard-chart',
-        get_stylesheet_directory_uri() . '/js/dashboard-charts.js', // Note: dashboard-charts.js with 's'
+        get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.1.0', // Increment to bust cache
+        '1.1.2', // Increment to bust cache
         true
     );
     
