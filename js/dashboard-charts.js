@@ -229,7 +229,12 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // Meta response has campaigns with weeklyBreakdown
     // For Google the response comes from fetch_google_ads_summary
     // which proxies google-ads-campaigns — campaigns have weeklyBreakdown
-    const googleCampaigns = googleData.campaigns || [];
+    let googleCampaigns = [];
+        if (googleData.chartData && googleData.chartData.campaigns) {
+            googleCampaigns = googleData.chartData.campaigns;
+        } else if (googleData.campaigns) {
+            googleCampaigns = googleData.campaigns;
+        }
     console.log(`🔵 Processing ${googleCampaigns.length} Google campaigns`);
 
     googleCampaigns.forEach(campaign => {
@@ -378,7 +383,7 @@ function createWelcomeChart(chartData) {
                 }
             }
         },
-        colors: ['#4285f4', '#1877f2', '#ff6b6b'],
+        colors: ['#34a853', '#1877f2', '#ff6b6b'],
         stroke: {
             width: [0, 0, 3],
             curve: 'smooth'
