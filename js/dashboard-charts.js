@@ -181,7 +181,7 @@ function parseRadioDate(dateStr) {
 // ============================================================
 
 /**
- * Aggregate a campaign's weeklyBreakdown into monthly grouped data points { x, y, group }
+ * Aggregate a campaign's weeklyBreakdown into monthly totals
  */
 function aggregateCampaignToMonths(campaign, labels) {
     const totals = new Array(labels.length).fill(0);
@@ -232,7 +232,6 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // ----------------------------------------------------------------
     // GOOGLE ADS
     // ----------------------------------------------------------------
-    // Google: data.campaigns contains all campaigns with status + weeklyBreakdown
     const googleAllCampaigns = googleData.campaigns || [];
     console.log(`🟢 Google: ${googleAllCampaigns.length} total campaigns`);
 
@@ -261,8 +260,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
             name: seriesName,
             type: 'bar',
             data,
-            color: GOOGLE_MUTED,
-
+            color: GOOGLE_MUTED
         };
     });
 
@@ -276,7 +274,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     const hasGoogleHistorical = googleHistoricalRounded.some(v => v > 0);
     if (hasGoogleHistorical) {
         campaignSeriesMeta.push({
-            name: 'Historical (Inactive) Campaigns',
+            name: 'Inactive Campaigns',
             seriesName: 'G: Historical',
             platform: 'google',
             isHistorical: true
@@ -286,7 +284,6 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // ----------------------------------------------------------------
     // META ADS
     // ----------------------------------------------------------------
-    // Meta: active campaign IDs from data.campaigns (cards), chart data from data.chartData.campaigns
     const metaCardCampaigns  = metaData.campaigns || [];
     const metaChartCampaigns = (metaData.chartData && metaData.chartData.campaigns) ? metaData.chartData.campaigns : [];
     const metaActiveIds      = new Set(metaCardCampaigns.map(c => c.id));
@@ -318,8 +315,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
             name: seriesName,
             type: 'bar',
             data,
-            color: META_MUTED,
-
+            color: META_MUTED
         };
     });
 
@@ -333,7 +329,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     const hasMetaHistorical = metaHistoricalRounded.some(v => v > 0);
     if (hasMetaHistorical) {
         campaignSeriesMeta.push({
-            name: 'Historical (Inactive) Campaigns',
+            name: 'Inactive Campaigns',
             seriesName: 'M: Historical',
             platform: 'meta',
             isHistorical: true
@@ -374,10 +370,9 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 
     // ----------------------------------------------------------------
     // BUILD SERIES ARRAY
-    // Order: totals first (stack group A), then campaign detail (stack group B), then radio line
+    // Order: totals first, then campaign detail (hidden), then radio line
     // ----------------------------------------------------------------
     const series = [
-        // --- Totals (each in own unique group = side-by-side, not stacked with campaigns) ---
         {
             name: 'Total Google Ads',
             type: 'bar',
@@ -391,10 +386,10 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
             color: META_COLOR
         },
 
-        // --- Google active campaigns (stack group B, hidden) ---
+        // Google active campaigns (hidden by default)
         ...googleCampaignSeries,
 
-        // --- Google historical aggregate (stack group B, hidden) ---
+        // Google historical aggregate (hidden by default)
         ...(hasGoogleHistorical ? [{
             name: 'G: Historical',
             type: 'bar',
@@ -402,10 +397,10 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
             color: GOOGLE_MUTED
         }] : []),
 
-        // --- Meta active campaigns (stack group B, hidden) ---
+        // Meta active campaigns (hidden by default)
         ...metaCampaignSeries,
 
-        // --- Meta historical aggregate (stack group B, hidden) ---
+        // Meta historical aggregate (hidden by default)
         ...(hasMetaHistorical ? [{
             name: 'M: Historical',
             type: 'bar',
@@ -413,7 +408,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
             color: META_MUTED
         }] : []),
 
-        // --- TV/Radio line ---
+        // TV/Radio line
         {
             name: 'Total TV / Radio Ads',
             type: 'line',
@@ -435,13 +430,9 @@ function createWelcomeChart(chartData) {
     const initialMin  = allLabels[totalMonths - 12];
     const initialMax  = allLabels[totalMonths - 1];
 
-    // Stroke widths: 0 for bars, 3 for TV/Radio line
-    // We'll set per-series via the colors array ordering
     const strokeWidths = chartData.series.map(s => s.type === 'line' ? 3 : 0);
     const fillOpacity  = chartData.series.map(s => s.type === 'line' ? 1 : 0.9);
 
-    // Build yaxis config — one visible left axis for spend, one hidden per spend series,
-    // one right axis for TV/Radio
     const yaxis = chartData.series.map((s, i) => {
         if (s.name === 'Total Google Ads') {
             return {
@@ -479,14 +470,13 @@ function createWelcomeChart(chartData) {
             stacked: false,
             toolbar: {
                 show: true,
-                autoSelected: 'pan', // Pan is active by default — drag to scroll x-axis
+                autoSelected: 'pan',
                 tools: { download: true, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true }
             },
             animations: { enabled: true, easing: 'easeinout', speed: 600 },
             events: {
                 mounted: function(chartCtx) {
                     // Hide all campaign detail series on mount
-                    // Campaign series are identified by G: or M: prefix
                     chartData.series.forEach(s => {
                         if (s.name.startsWith('G: ') || s.name.startsWith('M: ')) {
                             chartCtx.hideSeries(s.name);
@@ -499,10 +489,7 @@ function createWelcomeChart(chartData) {
                         allLabels.indexOf(initialMax)
                     );
 
-                    // Init nav state to match initial zoom
                     chartNavInit(totalMonths, initialMin, initialMax, allLabels);
-
-                    // Render nav panel and toggle panel
                     renderChartNavPanel();
                     renderCampaignTogglePanel();
                 }
@@ -510,12 +497,11 @@ function createWelcomeChart(chartData) {
         },
         colors: chartData.series.map(s => s.color),
         dataLabels: {
-            enabled: false  // Remove all white numbers from bars
+            enabled: false
         },
         stroke: {
             width: strokeWidths,
             curve: 'smooth',
-            // White separator lines between stacked campaign segments
             colors: chartData.series.map(s => s.type === 'bar' ? '#ffffff' : 'transparent'),
             dashArray: 0,
             lineCap: 'butt'
@@ -523,10 +509,7 @@ function createWelcomeChart(chartData) {
         plotOptions: {
             bar: {
                 columnWidth: '55%',
-                borderRadius: 0,
-                // Total series (Google, Meta) render ungrouped side-by-side.
-                // Campaign detail series share a stack group so they stack on top of each other.
-                // ApexCharts respects the series-level `group` property when chart.stacked is false.
+                borderRadius: 0
             }
         },
         fill: { opacity: fillOpacity },
@@ -540,7 +523,22 @@ function createWelcomeChart(chartData) {
             type: 'category',
             title: { text: 'Month', style: { fontSize: '16px', fontWeight: 600 } },
             tickPlacement: 'on',
-            labels: { rotate: -45, rotateAlways: false, style: { fontSize: '11px' } }
+            labels: { rotate: -45, rotateAlways: false, style: { fontSize: '11px' } },
+            crosshairs: {
+                show: true,
+                fill: {
+                    type: 'solid',
+                    color: '#ff6600'
+                }
+            },
+            tooltip: {
+                enabled: true,
+                style: {
+                    fontSize: '12px',
+                    background: '#ff6600',
+                    color: '#ffffff'
+                }
+            }
         },
         yaxis,
         tooltip: {
@@ -556,7 +554,7 @@ function createWelcomeChart(chartData) {
             }
         },
         legend: {
-            show: false // We use our own external toggle panel
+            show: false
         },
         title: {
             text: 'Marketing Performance Overview',
@@ -591,7 +589,7 @@ const chartNav = {
     min: 0,       // will be set after chart mounts
     max: 11,      // will be set after chart mounts
     total: 24,    // total months available
-    step: 3,      // months per scroll click
+    step: 3,      // months per 3-month scroll click
     zoomStep: 3   // months to add/remove per zoom click
 };
 
@@ -616,9 +614,31 @@ function chartScrollLeft() {
     chartNavApply();
 }
 
+function chartScrollLeftOne() {
+    const range = chartNav.max - chartNav.min;
+    chartNav.min = Math.max(0, chartNav.min - 1);
+    chartNav.max = chartNav.min + range;
+    if (chartNav.max >= chartNav.total) {
+        chartNav.max = chartNav.total - 1;
+        chartNav.min = chartNav.max - range;
+    }
+    chartNavApply();
+}
+
 function chartScrollRight() {
     const range = chartNav.max - chartNav.min;
     chartNav.max = Math.min(chartNav.total - 1, chartNav.max + chartNav.step);
+    chartNav.min = chartNav.max - range;
+    if (chartNav.min < 0) {
+        chartNav.min = 0;
+        chartNav.max = range;
+    }
+    chartNavApply();
+}
+
+function chartScrollRightOne() {
+    const range = chartNav.max - chartNav.min;
+    chartNav.max = Math.min(chartNav.total - 1, chartNav.max + 1);
     chartNav.min = chartNav.max - range;
     if (chartNav.min < 0) {
         chartNav.min = 0;
@@ -670,11 +690,17 @@ function renderChartNavPanel() {
             <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeft()" title="Scroll back 3 months">
                 &#9664; <span>3 Months</span>
             </button>
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeftOne()" title="Scroll back 1 month">
+                &#9664; <span>1 Month</span>
+            </button>
             <div class="chart-nav__zoom">
                 <button class="chart-nav__btn chart-nav__btn--zoom" onclick="chartZoomIn()" title="Zoom in">+</button>
                 <button class="chart-nav__btn chart-nav__btn--reset" onclick="chartZoomReset()" title="Reset to last 12 months">Reset</button>
                 <button class="chart-nav__btn chart-nav__btn--zoom" onclick="chartZoomOut()" title="Zoom out">−</button>
             </div>
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRightOne()" title="Scroll forward 1 month">
+                <span>1 Month</span> &#9654;
+            </button>
             <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRight()" title="Scroll forward 3 months">
                 <span>3 Months</span> &#9654;
             </button>
@@ -721,14 +747,51 @@ function renderCampaignTogglePanel() {
         return;
     }
 
-    // Split into Google and Meta groups
     const googleMeta = campaignSeriesMeta.filter(c => c.platform === 'google');
     const metaMeta   = campaignSeriesMeta.filter(c => c.platform === 'meta');
 
     panel.innerHTML = `
         <div class="toggle-panel">
+            ${renderTotalsToggleGroup()}
             ${renderToggleGroup('Google Ads Campaigns', googleMeta, 'google')}
             ${renderToggleGroup('Meta Ads Campaigns', metaMeta, 'meta')}
+        </div>
+    `;
+}
+
+/**
+ * Render the "Overview Totals" toggle group — always-on by default
+ */
+function renderTotalsToggleGroup() {
+    const totals = [
+        { seriesName: 'Total Google Ads',    label: 'Total Google Ads',    color: GOOGLE_COLOR },
+        { seriesName: 'Total Meta Ads',       label: 'Total Meta Ads',       color: META_COLOR   },
+        { seriesName: 'Total TV / Radio Ads', label: 'Total TV / Radio Ads', color: RADIO_COLOR  }
+    ];
+
+    const buttons = totals.map(t => {
+        campaignVisibility[t.seriesName] = true; // init as visible
+        return `
+            <button
+                class="toggle-btn toggle-btn--active"
+                data-series="${escapeAttr(t.seriesName)}"
+                onclick="toggleCampaignSeries('${escapeAttr(t.seriesName)}', this)"
+                title="${escapeAttr(t.label)}"
+            >
+                <span class="toggle-btn__dot" style="background:${t.color}"></span>
+                ${t.label}
+            </button>
+        `;
+    }).join('');
+
+    return `
+        <div class="toggle-group toggle-group--totals">
+            <div class="toggle-group__header">
+                <span class="toggle-group__title">Overview Totals</span>
+            </div>
+            <div class="toggle-group__buttons">
+                ${buttons}
+            </div>
         </div>
     `;
 }
@@ -736,13 +799,12 @@ function renderCampaignTogglePanel() {
 function renderToggleGroup(title, campaigns, platform) {
     if (campaigns.length === 0) return '';
 
-    const accentColor = platform === 'google' ? GOOGLE_MUTED : META_MUTED;
-    const dotColor    = platform === 'google' ? GOOGLE_COLOR : META_COLOR;
+    const dotColor = platform === 'google' ? GOOGLE_COLOR : META_COLOR;
 
     const buttons = campaigns.map(c => {
         campaignVisibility[c.seriesName] = false; // init all as hidden
         const label = c.isHistorical
-            ? '⏱ Historical (Inactive) Campaigns'
+            ? '⏱ Inactive Campaigns'
             : c.name;
         return `
             <button
