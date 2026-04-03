@@ -75,7 +75,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.2.7', // Increment to bust cache
+        '1.2.8', // Increment to bust cache
         true
     );
     
