@@ -448,7 +448,7 @@ function createWelcomeChart(chartData) {
                 seriesName: 'Total Google Ads',
                 title: {
                     text: 'Ad Spend ($)',
-                    style: { fontSize: '13px', fontWeight: 600, color: '#4285f4' }
+                    style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' }
                 },
                 labels: { formatter: val => '$' + Math.round(val).toLocaleString() }
             };
@@ -459,7 +459,7 @@ function createWelcomeChart(chartData) {
                 opposite: true,
                 title: {
                     text: 'TV / Radio Ads Played',
-                    style: { fontSize: '13px', fontWeight: 600, color: RADIO_COLOR }
+                    style: { fontSize: '16px', fontWeight: 600, color: RADIO_COLOR }
                 },
                 labels: { formatter: val => Math.round(val) + ' ads' }
             };
@@ -538,7 +538,7 @@ function createWelcomeChart(chartData) {
         xaxis: {
             categories: allLabels,
             type: 'category',
-            title: { text: 'Month', style: { fontSize: '13px', fontWeight: 600 } },
+            title: { text: 'Month', style: { fontSize: '16px', fontWeight: 600 } },
             tickPlacement: 'on',
             labels: { rotate: -45, rotateAlways: false, style: { fontSize: '11px' } }
         },
