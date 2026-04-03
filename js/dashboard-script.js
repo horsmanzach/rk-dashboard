@@ -1411,7 +1411,7 @@ function loadCampaignAdSets(campaignId, days) {
                 if (totalAdSetsEl) totalAdSetsEl.textContent = data.totalAdSets || '0';
 
                 // Get grid
-                const grid = document.getElementById('facebookAdSetsGrid');
+                const grid = document.getElementById('facebookAdSetGrid');
                 if (!grid) return;
 
                 grid.innerHTML = '';
@@ -1488,7 +1488,6 @@ function loadCampaignAdSets(campaignId, days) {
         });
 }
 
-// Load all data when page loads
 window.addEventListener('load', function () {
     setTimeout(() => {
         loadGoogleAdsData();
@@ -1496,10 +1495,10 @@ window.addEventListener('load', function () {
         loadTVRadioData();
         loadAlbanyData();
         loadMontrealData();
-        // Load all Syracuse station data
-        loadWTLAData();
-        loadWKRLData();
-        loadWKTWData();
-        loadWZUNData();
+        // Stagger station loads 2 seconds apart
+        setTimeout(() => loadWTLAData(), 0);
+        setTimeout(() => loadWKRLData(), 2000);
+        setTimeout(() => loadWKTWData(), 4000);
+        setTimeout(() => loadWZUNData(), 6000);
     }, 500);
 });
