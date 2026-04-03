@@ -57,13 +57,12 @@ function enqueue_ad_dashboard_assets() {
 }
 add_action('wp_enqueue_scripts', 'enqueue_ad_dashboard_assets');
 
-// Load in ApexCharets
 function enqueue_apexcharts() {
     wp_enqueue_script(
         'apexcharts',
-        'https://cdn.jsdelivr.net/npm/apexcharts',
+        'https://cdn.jsdelivr.net/npm/apexcharts@3.46.0/dist/apexcharts.min.js',
         array(),
-        '3.45.0',
+        '3.46.0',
         true
     );
 }
@@ -76,7 +75,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.1.2', // Increment to bust cache
+        '1.2.7', // Increment to bust cache
         true
     );
     
