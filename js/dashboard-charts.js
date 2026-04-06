@@ -275,7 +275,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     if (hasGoogleHistorical) {
         campaignSeriesMeta.push({
             name: 'Inactive Campaigns',
-            seriesName: 'G: Historical',
+            seriesName: 'G: Inactive Campaigns', // ← matches series name below
             platform: 'google',
             isHistorical: true
         });
@@ -330,7 +330,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     if (hasMetaHistorical) {
         campaignSeriesMeta.push({
             name: 'Inactive Campaigns',
-            seriesName: 'M: Historical',
+            seriesName: 'M: Inactive Campaigns', // ← matches series name below
             platform: 'meta',
             isHistorical: true
         });
@@ -391,7 +391,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 
         // Google historical aggregate (hidden by default)
         ...(hasGoogleHistorical ? [{
-            name: 'G: Historical',
+            name: 'G: Inactive Campaigns', // ← tooltip label (was 'G: Historical')
             type: 'bar',
             data: googleHistoricalRounded,
             color: GOOGLE_MUTED
@@ -402,7 +402,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 
         // Meta historical aggregate (hidden by default)
         ...(hasMetaHistorical ? [{
-            name: 'M: Historical',
+            name: 'M: Inactive Campaigns', // ← tooltip label (was 'M: Historical')
             type: 'bar',
             data: metaHistoricalRounded,
             color: META_MUTED
@@ -557,7 +557,7 @@ function createWelcomeChart(chartData) {
             show: false
         },
         title: {
-            text: 'Marketing Performance Overview',
+            text: 'Paid Ad Campaign Performance Overview',
             align: 'center',
             style: { fontSize: '20px', fontWeight: 600 }
         },
