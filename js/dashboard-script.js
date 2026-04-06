@@ -1,5 +1,36 @@
-
 // Ad Dashboard JavaScript - Divi Row Version
+
+// ============================================================
+// UTILITY: Fetch with retry logic
+// Retries up to `retries` times with `delay` ms between attempts
+// ============================================================
+async function fetchWithRetry(action, nonce, ajaxUrl, extraFields = {}, retries = 2, delay = 4000) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const formData = new FormData();
+            formData.append('action', action);
+            formData.append('nonce', nonce);
+
+            // Append any extra fields (e.g. campaign_id, days)
+            Object.entries(extraFields).forEach(([key, val]) => formData.append(key, val));
+
+            const response = await fetch(ajaxUrl, { method: 'POST', body: formData });
+            const result = await response.json();
+
+            if (result.success && result.data) return result;
+
+            if (attempt < retries) {
+                console.warn(`⚠️ ${action} returned no data (attempt ${attempt + 1}). Retrying in ${delay}ms...`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+        } catch (err) {
+            console.warn(`⚠️ ${action} fetch error (attempt ${attempt + 1}):`, err);
+            if (attempt < retries) await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    console.error(`❌ ${action} failed after ${retries + 1} attempts.`);
+    return null;
+}
 
 function formatDate(dateStr) {
     // Input: "01/08/24" Output: "Jan. 8th 2024"
@@ -240,662 +271,234 @@ function loadMontrealData() {
     console.log('📋 Montreal data not yet available');
 }
 
+// ============================================================
+// SHARED: Render order sections into a container element
+// ============================================================
+function renderOrderSections(data, containerId, summaryIds) {
+    const { totalAdsId, dateRangeId } = summaryIds;
 
-// Individual Station Data Loading Functions
-function loadWTLAData() {
+    if (data.summary) {
+        const totalAdsEl = document.getElementById(totalAdsId);
+        const dateRangeEl = document.getElementById(dateRangeId);
+
+        if (totalAdsEl) totalAdsEl.textContent = data.summary.totalAds || '-';
+
+        if (dateRangeEl && data.summary.dateRange) {
+            if (data.summary.dateRange.start && data.summary.dateRange.end) {
+                dateRangeEl.textContent = formatDate(data.summary.dateRange.start) + ' - ' + formatDate(data.summary.dateRange.end);
+            } else {
+                dateRangeEl.textContent = '-';
+            }
+        }
+    }
+
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.log('❌ Container not found:', containerId);
+        return;
+    }
+
+    container.innerHTML = '';
+
+    if (!data.orders || data.orders.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999; margin-top: 2rem;">No data available</p>';
+        return;
+    }
+
+    console.log('📋 Processing', data.orders.length, 'orders into', containerId);
+
+    data.orders.forEach((order, orderIndex) => {
+        console.log('📦 Processing order', orderIndex, ':', order.orderNumber);
+
+        const formattedStartDate = formatDate(order.dateRange.start);
+        const formattedEndDate = formatDate(order.dateRange.end);
+
+        const orderSection = document.createElement('div');
+        orderSection.className = 'order-section';
+
+        const orderHeader = document.createElement('div');
+        orderHeader.className = 'order-header';
+        orderHeader.style.cursor = 'pointer';
+        orderHeader.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0 0 0.5rem 0;">${order.orderNumber}</h3>
+                    <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                        <span><strong>Date Range:</strong> ${formattedStartDate} - ${formattedEndDate}</span>
+                        <span><strong>Total Ads:</strong> ${order.totalAds}</span>
+                    </div>
+                </div>
+                <span class="order-toggle">▶</span>
+            </div>
+        `;
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'daily-breakdown-container order-table-content';
+        tableContainer.style.display = 'none';
+
+        const table = document.createElement('table');
+        table.className = 'daily-breakdown-table';
+
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th>Date Aired</th>
+                <th># of Ads Ran</th>
+                <th>Ad-ID</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+
+        if (order.dailyBreakdown && order.dailyBreakdown.length > 0) {
+            order.dailyBreakdown.forEach(day => {
+                const row = document.createElement('tr');
+
+                const dateCell = document.createElement('td');
+                dateCell.textContent = formatDate(day.date);
+
+                const countCell = document.createElement('td');
+                countCell.textContent = day.adCount;
+
+                const adIDCell = document.createElement('td');
+                adIDCell.textContent = (day.adIDs && day.adIDs.length > 0) ? day.adIDs.join(', ') : '-';
+
+                row.appendChild(dateCell);
+                row.appendChild(countCell);
+                row.appendChild(adIDCell);
+                tbody.appendChild(row);
+            });
+        } else {
+            const noDataRow = document.createElement('tr');
+            noDataRow.innerHTML = '<td colspan="3" style="text-align: center; color: #999;">No daily data available</td>';
+            tbody.appendChild(noDataRow);
+        }
+
+        table.appendChild(tbody);
+        tableContainer.appendChild(table);
+
+        orderHeader.addEventListener('click', function () {
+            const toggle = this.querySelector('.order-toggle');
+            const isVisible = tableContainer.style.display !== 'none';
+
+            if (isVisible) {
+                tableContainer.style.display = 'none';
+                toggle.textContent = '▶';
+                orderHeader.style.borderRadius = '10px';
+            } else {
+                tableContainer.style.display = 'block';
+                toggle.textContent = '▼';
+                orderHeader.style.borderRadius = '10px 10px 0 0';
+            }
+        });
+
+        orderSection.appendChild(orderHeader);
+        orderSection.appendChild(tableContainer);
+        container.appendChild(orderSection);
+    });
+
+    console.log('✅ Created', data.orders.length, 'collapsible order sections in', containerId);
+}
+
+// ============================================================
+// Individual Station Data Loading Functions (with retry)
+// ============================================================
+
+async function loadWTLAData() {
     console.log('🔵 loadWTLAData called!');
 
-    const formData = new FormData();
-    formData.append('action', 'fetch_wtla_ads');
-    formData.append('nonce', dashboardConfig.nonce);
+    const result = await fetchWithRetry(
+        'fetch_wtla_ads',
+        dashboardConfig.nonce,
+        dashboardConfig.ajaxUrl
+    );
 
-    fetch(dashboardConfig.ajaxUrl, {
-        method: 'POST',
-        body: formData
-    })
-        .then(response => response.json())
-        .then(result => {
-            console.log('✅ WTLA Full Response:', result);
-
-            if (result.success && result.data) {
-                const data = result.data;
-
-                // Store data for aggregation
-                syracuseStationData.wtla = data; // Change station name accordingly
-
-                // Update Syracuse overview
-                updateSyracuseOverview();
-
-                console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
-
-                if (data.summary) {
-                    const totalAdsEl = document.getElementById('wtlaTotalAds');
-                    const dateRangeEl = document.getElementById('wtlaDateRange');
-
-                    if (totalAdsEl) {
-                        totalAdsEl.textContent = data.summary.totalAds || '-';
-                    }
-
-                    if (dateRangeEl && data.summary.dateRange) {
-                        if (data.summary.dateRange.start && data.summary.dateRange.end) {
-                            dateRangeEl.textContent = formatDate(data.summary.dateRange.start) + ' - ' + formatDate(data.summary.dateRange.end);
-                        } else {
-                            dateRangeEl.textContent = '-';
-                        }
-                    }
-                }
-
-                const container = document.getElementById('wtlaOrdersContainer');
-
-                if (!container) {
-                    console.log('❌ Container not found!');
-                    return;
-                }
-
-                container.innerHTML = '';
-
-                if (!data.orders || data.orders.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #999; margin-top: 2rem;">No data available</p>';
-                    return;
-                }
-
-                console.log('📋 Processing', data.orders.length, 'orders');
-
-                data.orders.forEach((order, orderIndex) => {
-                    console.log('📦 Processing order', orderIndex, ':', order.orderNumber);
-
-                    const formattedStartDate = formatDate(order.dateRange.start);
-                    const formattedEndDate = formatDate(order.dateRange.end);
-
-                    const orderSection = document.createElement('div');
-                    orderSection.className = 'order-section';
-
-                    const orderHeader = document.createElement('div');
-                    orderHeader.className = 'order-header';
-                    orderHeader.style.cursor = 'pointer';
-                    orderHeader.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="margin: 0 0 0.5rem 0;">${order.orderNumber}</h3>
-                                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                                    <span><strong>Date Range:</strong> ${formattedStartDate} - ${formattedEndDate}</span>
-                                    <span><strong>Total Ads:</strong> ${order.totalAds}</span>
-                                </div>
-                            </div>
-                            <span class="order-toggle">▶</span>
-                        </div>
-                    `;
-
-                    const tableContainer = document.createElement('div');
-                    tableContainer.className = 'daily-breakdown-container order-table-content';
-                    tableContainer.style.display = 'none';
-
-                    const table = document.createElement('table');
-                    table.className = 'daily-breakdown-table';
-
-                    const thead = document.createElement('thead');
-                    thead.innerHTML = `
-                        <tr>
-                            <th>Date Aired</th>
-                            <th># of Ads Ran</th>
-                            <th>Ad-ID</th>
-                        </tr>
-                    `;
-                    table.appendChild(thead);
-
-                    const tbody = document.createElement('tbody');
-
-                    if (order.dailyBreakdown && order.dailyBreakdown.length > 0) {
-                        order.dailyBreakdown.forEach(day => {
-                            const row = document.createElement('tr');
-
-                            const dateCell = document.createElement('td');
-                            dateCell.textContent = formatDate(day.date);
-
-                            const countCell = document.createElement('td');
-                            countCell.textContent = day.adCount;
-
-                            const adIDCell = document.createElement('td');
-                            if (day.adIDs && day.adIDs.length > 0) {
-                                adIDCell.textContent = day.adIDs.join(', ');
-                            } else {
-                                adIDCell.textContent = '-';
-                            }
-
-                            row.appendChild(dateCell);
-                            row.appendChild(countCell);
-                            row.appendChild(adIDCell);
-                            tbody.appendChild(row);
-                        });
-                    } else {
-                        const noDataRow = document.createElement('tr');
-                        noDataRow.innerHTML = '<td colspan="3" style="text-align: center; color: #999;">No daily data available</td>';
-                        tbody.appendChild(noDataRow);
-                    }
-
-                    table.appendChild(tbody);
-                    tableContainer.appendChild(table);
-
-                    orderHeader.addEventListener('click', function () {
-                        const toggle = this.querySelector('.order-toggle');
-                        const isVisible = tableContainer.style.display !== 'none';
-
-                        if (isVisible) {
-                            tableContainer.style.display = 'none';
-                            toggle.textContent = '▶';
-                            orderHeader.style.borderRadius = '10px';
-                        } else {
-                            tableContainer.style.display = 'block';
-                            toggle.textContent = '▼';
-                            orderHeader.style.borderRadius = '10px 10px 0 0';
-                        }
-                    });
-
-                    orderSection.appendChild(orderHeader);
-                    orderSection.appendChild(tableContainer);
-                    container.appendChild(orderSection);
-                });
-
-                console.log('✅ Created', data.orders.length, 'collapsible order sections');
-            } else {
-                console.error('❌ AJAX Error:', result);
-            }
-        })
-        .catch(error => {
-            console.error('❌ Error loading WTLA data:', error);
+    if (result) {
+        const data = result.data;
+        console.log('✅ WTLA Full Response:', result);
+        syracuseStationData.wtla = data;
+        updateSyracuseOverview();
+        console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
+        renderOrderSections(data, 'wtlaOrdersContainer', {
+            totalAdsId: 'wtlaTotalAds',
+            dateRangeId: 'wtlaDateRange'
         });
+    } else {
+        console.error('❌ WTLA failed to load after all retries.');
+    }
 }
 
-function loadWKRLData() {
+async function loadWKRLData() {
     console.log('🔵 loadWKRLData called!');
 
-    const formData = new FormData();
-    formData.append('action', 'fetch_tvradio_ads');
-    formData.append('nonce', dashboardConfig.nonce);
+    const result = await fetchWithRetry(
+        'fetch_tvradio_ads',
+        dashboardConfig.nonce,
+        dashboardConfig.ajaxUrl
+    );
 
-    fetch(dashboardConfig.ajaxUrl, {
-        method: 'POST',
-        body: formData
-    })
-        .then(response => response.json())
-        .then(result => {
-            console.log('✅ WKRL Full Response:', result);
-
-            if (result.success && result.data) {
-                const data = result.data;
-
-                // Store data for aggregation
-                syracuseStationData.wkrl = data; // Change station name accordingly
-
-                // Update Syracuse overview
-                updateSyracuseOverview();
-
-                console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
-
-                if (data.summary) {
-                    const totalAdsEl = document.getElementById('wkrlTotalAds');
-                    const dateRangeEl = document.getElementById('wkrlDateRange');
-
-                    if (totalAdsEl) {
-                        totalAdsEl.textContent = data.summary.totalAds || '-';
-                    }
-
-                    if (dateRangeEl && data.summary.dateRange) {
-                        if (data.summary.dateRange.start && data.summary.dateRange.end) {
-                            dateRangeEl.textContent = formatDate(data.summary.dateRange.start) + ' - ' + formatDate(data.summary.dateRange.end);
-                        } else {
-                            dateRangeEl.textContent = '-';
-                        }
-                    }
-                }
-
-                const container = document.getElementById('wkrlOrdersContainer');
-
-                if (!container) {
-                    console.log('❌ Container not found!');
-                    return;
-                }
-
-                container.innerHTML = '';
-
-                if (!data.orders || data.orders.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #999; margin-top: 2rem;">No data available</p>';
-                    return;
-                }
-
-                console.log('📋 Processing', data.orders.length, 'orders');
-
-                data.orders.forEach((order, orderIndex) => {
-                    console.log('📦 Processing order', orderIndex, ':', order.orderNumber);
-
-                    const formattedStartDate = formatDate(order.dateRange.start);
-                    const formattedEndDate = formatDate(order.dateRange.end);
-
-                    const orderSection = document.createElement('div');
-                    orderSection.className = 'order-section';
-
-                    const orderHeader = document.createElement('div');
-                    orderHeader.className = 'order-header';
-                    orderHeader.style.cursor = 'pointer';
-                    orderHeader.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="margin: 0 0 0.5rem 0;">${order.orderNumber}</h3>
-                                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                                    <span><strong>Date Range:</strong> ${formattedStartDate} - ${formattedEndDate}</span>
-                                    <span><strong>Total Ads:</strong> ${order.totalAds}</span>
-                                </div>
-                            </div>
-                            <span class="order-toggle">▶</span>
-                        </div>
-                    `;
-
-                    const tableContainer = document.createElement('div');
-                    tableContainer.className = 'daily-breakdown-container order-table-content';
-                    tableContainer.style.display = 'none';
-
-                    const table = document.createElement('table');
-                    table.className = 'daily-breakdown-table';
-
-                    const thead = document.createElement('thead');
-                    thead.innerHTML = `
-                        <tr>
-                            <th>Date Aired</th>
-                            <th># of Ads Ran</th>
-                            <th>Ad-ID</th>
-                        </tr>
-                    `;
-                    table.appendChild(thead);
-
-                    const tbody = document.createElement('tbody');
-
-                    if (order.dailyBreakdown && order.dailyBreakdown.length > 0) {
-                        order.dailyBreakdown.forEach(day => {
-                            const row = document.createElement('tr');
-
-                            const dateCell = document.createElement('td');
-                            dateCell.textContent = formatDate(day.date);
-
-                            const countCell = document.createElement('td');
-                            countCell.textContent = day.adCount;
-
-                            const adIDCell = document.createElement('td');
-                            if (day.adIDs && day.adIDs.length > 0) {
-                                adIDCell.textContent = day.adIDs.join(', ');
-                            } else {
-                                adIDCell.textContent = '-';
-                            }
-
-                            row.appendChild(dateCell);
-                            row.appendChild(countCell);
-                            row.appendChild(adIDCell);
-                            tbody.appendChild(row);
-                        });
-                    } else {
-                        const noDataRow = document.createElement('tr');
-                        noDataRow.innerHTML = '<td colspan="3" style="text-align: center; color: #999;">No daily data available</td>';
-                        tbody.appendChild(noDataRow);
-                    }
-
-                    table.appendChild(tbody);
-                    tableContainer.appendChild(table);
-
-                    orderHeader.addEventListener('click', function () {
-                        const toggle = this.querySelector('.order-toggle');
-                        const isVisible = tableContainer.style.display !== 'none';
-
-                        if (isVisible) {
-                            tableContainer.style.display = 'none';
-                            toggle.textContent = '▶';
-                            orderHeader.style.borderRadius = '10px';
-                        } else {
-                            tableContainer.style.display = 'block';
-                            toggle.textContent = '▼';
-                            orderHeader.style.borderRadius = '10px 10px 0 0';
-                        }
-                    });
-
-                    orderSection.appendChild(orderHeader);
-                    orderSection.appendChild(tableContainer);
-                    container.appendChild(orderSection);
-                });
-
-                console.log('✅ Created', data.orders.length, 'collapsible order sections');
-            } else {
-                console.error('❌ AJAX Error:', result);
-            }
-        })
-        .catch(error => {
-            console.error('❌ Error loading WKRL data:', error);
+    if (result) {
+        const data = result.data;
+        console.log('✅ WKRL Full Response:', result);
+        syracuseStationData.wkrl = data;
+        updateSyracuseOverview();
+        console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
+        renderOrderSections(data, 'wkrlOrdersContainer', {
+            totalAdsId: 'wkrlTotalAds',
+            dateRangeId: 'wkrlDateRange'
         });
+    } else {
+        console.error('❌ WKRL failed to load after all retries.');
+    }
 }
 
-function loadWKTWData() {
+async function loadWKTWData() {
     console.log('🔵 loadWKTWData called!');
 
-    const formData = new FormData();
-    formData.append('action', 'fetch_wktw_ads');
-    formData.append('nonce', dashboardConfig.nonce);
+    const result = await fetchWithRetry(
+        'fetch_wktw_ads',
+        dashboardConfig.nonce,
+        dashboardConfig.ajaxUrl
+    );
 
-    fetch(dashboardConfig.ajaxUrl, {
-        method: 'POST',
-        body: formData
-    })
-        .then(response => response.json())
-        .then(result => {
-            console.log('✅ WKTW Full Response:', result);
-
-            if (result.success && result.data) {
-                const data = result.data;
-
-                // Store data for aggregation
-                syracuseStationData.wktw = data; // Change station name accordingly
-
-                // Update Syracuse overview
-                updateSyracuseOverview();
-
-                console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
-
-                if (data.summary) {
-                    const totalAdsEl = document.getElementById('wktwTotalAds');
-                    const dateRangeEl = document.getElementById('wktwDateRange');
-
-                    if (totalAdsEl) {
-                        totalAdsEl.textContent = data.summary.totalAds || '-';
-                    }
-
-                    if (dateRangeEl && data.summary.dateRange) {
-                        if (data.summary.dateRange.start && data.summary.dateRange.end) {
-                            dateRangeEl.textContent = formatDate(data.summary.dateRange.start) + ' - ' + formatDate(data.summary.dateRange.end);
-                        } else {
-                            dateRangeEl.textContent = '-';
-                        }
-                    }
-                }
-
-                const container = document.getElementById('wktwOrdersContainer');
-
-                if (!container) {
-                    console.log('❌ Container not found!');
-                    return;
-                }
-
-                container.innerHTML = '';
-
-                if (!data.orders || data.orders.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #999; margin-top: 2rem;">No data available</p>';
-                    return;
-                }
-
-                console.log('📋 Processing', data.orders.length, 'orders');
-
-                data.orders.forEach((order, orderIndex) => {
-                    console.log('📦 Processing order', orderIndex, ':', order.orderNumber);
-
-                    const formattedStartDate = formatDate(order.dateRange.start);
-                    const formattedEndDate = formatDate(order.dateRange.end);
-
-                    const orderSection = document.createElement('div');
-                    orderSection.className = 'order-section';
-
-                    const orderHeader = document.createElement('div');
-                    orderHeader.className = 'order-header';
-                    orderHeader.style.cursor = 'pointer';
-                    orderHeader.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="margin: 0 0 0.5rem 0;">${order.orderNumber}</h3>
-                                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                                    <span><strong>Date Range:</strong> ${formattedStartDate} - ${formattedEndDate}</span>
-                                    <span><strong>Total Ads:</strong> ${order.totalAds}</span>
-                                </div>
-                            </div>
-                            <span class="order-toggle">▶</span>
-                        </div>
-                    `;
-
-                    const tableContainer = document.createElement('div');
-                    tableContainer.className = 'daily-breakdown-container order-table-content';
-                    tableContainer.style.display = 'none';
-
-                    const table = document.createElement('table');
-                    table.className = 'daily-breakdown-table';
-
-                    const thead = document.createElement('thead');
-                    thead.innerHTML = `
-                        <tr>
-                            <th>Date Aired</th>
-                            <th># of Ads Ran</th>
-                            <th>Ad-ID</th>
-                        </tr>
-                    `;
-                    table.appendChild(thead);
-
-                    const tbody = document.createElement('tbody');
-
-                    if (order.dailyBreakdown && order.dailyBreakdown.length > 0) {
-                        order.dailyBreakdown.forEach(day => {
-                            const row = document.createElement('tr');
-
-                            const dateCell = document.createElement('td');
-                            dateCell.textContent = formatDate(day.date);
-
-                            const countCell = document.createElement('td');
-                            countCell.textContent = day.adCount;
-
-                            const adIDCell = document.createElement('td');
-                            if (day.adIDs && day.adIDs.length > 0) {
-                                adIDCell.textContent = day.adIDs.join(', ');
-                            } else {
-                                adIDCell.textContent = '-';
-                            }
-
-                            row.appendChild(dateCell);
-                            row.appendChild(countCell);
-                            row.appendChild(adIDCell);
-                            tbody.appendChild(row);
-                        });
-                    } else {
-                        const noDataRow = document.createElement('tr');
-                        noDataRow.innerHTML = '<td colspan="3" style="text-align: center; color: #999;">No daily data available</td>';
-                        tbody.appendChild(noDataRow);
-                    }
-
-                    table.appendChild(tbody);
-                    tableContainer.appendChild(table);
-
-                    orderHeader.addEventListener('click', function () {
-                        const toggle = this.querySelector('.order-toggle');
-                        const isVisible = tableContainer.style.display !== 'none';
-
-                        if (isVisible) {
-                            tableContainer.style.display = 'none';
-                            toggle.textContent = '▶';
-                            orderHeader.style.borderRadius = '10px';
-                        } else {
-                            tableContainer.style.display = 'block';
-                            toggle.textContent = '▼';
-                            orderHeader.style.borderRadius = '10px 10px 0 0';
-                        }
-                    });
-
-                    orderSection.appendChild(orderHeader);
-                    orderSection.appendChild(tableContainer);
-                    container.appendChild(orderSection);
-                });
-
-                console.log('✅ Created', data.orders.length, 'collapsible order sections');
-            } else {
-                console.error('❌ AJAX Error:', result);
-            }
-        })
-        .catch(error => {
-            console.error('❌ Error loading WKTW data:', error);
+    if (result) {
+        const data = result.data;
+        console.log('✅ WKTW Full Response:', result);
+        syracuseStationData.wktw = data;
+        updateSyracuseOverview();
+        console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
+        renderOrderSections(data, 'wktwOrdersContainer', {
+            totalAdsId: 'wktwTotalAds',
+            dateRangeId: 'wktwDateRange'
         });
+    } else {
+        console.error('❌ WKTW failed to load after all retries.');
+    }
 }
 
-function loadWZUNData() {
+async function loadWZUNData() {
     console.log('🔵 loadWZUNData called!');
 
-    const formData = new FormData();
-    formData.append('action', 'fetch_wzun_ads');
-    formData.append('nonce', dashboardConfig.nonce);
+    const result = await fetchWithRetry(
+        'fetch_wzun_ads',
+        dashboardConfig.nonce,
+        dashboardConfig.ajaxUrl
+    );
 
-    fetch(dashboardConfig.ajaxUrl, {
-        method: 'POST',
-        body: formData
-    })
-        .then(response => response.json())
-        .then(result => {
-            console.log('✅ WZUN Full Response:', result);
-
-            if (result.success && result.data) {
-                const data = result.data;
-
-                // Store data for aggregation
-                syracuseStationData.wzun = data; // Change station name accordingly
-
-                // Update Syracuse overview
-                updateSyracuseOverview();
-
-                console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
-
-                if (data.summary) {
-                    const totalAdsEl = document.getElementById('wzunTotalAds');
-                    const dateRangeEl = document.getElementById('wzunDateRange');
-
-                    if (totalAdsEl) {
-                        totalAdsEl.textContent = data.summary.totalAds || '-';
-                    }
-
-                    if (dateRangeEl && data.summary.dateRange) {
-                        if (data.summary.dateRange.start && data.summary.dateRange.end) {
-                            dateRangeEl.textContent = formatDate(data.summary.dateRange.start) + ' - ' + formatDate(data.summary.dateRange.end);
-                        } else {
-                            dateRangeEl.textContent = '-';
-                        }
-                    }
-                }
-
-                const container = document.getElementById('wzunOrdersContainer');
-
-                if (!container) {
-                    console.log('❌ Container not found!');
-                    return;
-                }
-
-                container.innerHTML = '';
-
-                if (!data.orders || data.orders.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #999; margin-top: 2rem;">No data available</p>';
-                    return;
-                }
-
-                console.log('📋 Processing', data.orders.length, 'orders');
-
-                data.orders.forEach((order, orderIndex) => {
-                    console.log('📦 Processing order', orderIndex, ':', order.orderNumber);
-
-                    const formattedStartDate = formatDate(order.dateRange.start);
-                    const formattedEndDate = formatDate(order.dateRange.end);
-
-                    const orderSection = document.createElement('div');
-                    orderSection.className = 'order-section';
-
-                    const orderHeader = document.createElement('div');
-                    orderHeader.className = 'order-header';
-                    orderHeader.style.cursor = 'pointer';
-                    orderHeader.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="margin: 0 0 0.5rem 0;">${order.orderNumber}</h3>
-                                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                                    <span><strong>Date Range:</strong> ${formattedStartDate} - ${formattedEndDate}</span>
-                                    <span><strong>Total Ads:</strong> ${order.totalAds}</span>
-                                </div>
-                            </div>
-                            <span class="order-toggle">▶</span>
-                        </div>
-                    `;
-
-                    const tableContainer = document.createElement('div');
-                    tableContainer.className = 'daily-breakdown-container order-table-content';
-                    tableContainer.style.display = 'none';
-
-                    const table = document.createElement('table');
-                    table.className = 'daily-breakdown-table';
-
-                    const thead = document.createElement('thead');
-                    thead.innerHTML = `
-                        <tr>
-                            <th>Date Aired</th>
-                            <th># of Ads Ran</th>
-                            <th>Ad-ID</th>
-                        </tr>
-                    `;
-                    table.appendChild(thead);
-
-                    const tbody = document.createElement('tbody');
-
-                    if (order.dailyBreakdown && order.dailyBreakdown.length > 0) {
-                        order.dailyBreakdown.forEach(day => {
-                            const row = document.createElement('tr');
-
-                            const dateCell = document.createElement('td');
-                            dateCell.textContent = formatDate(day.date);
-
-                            const countCell = document.createElement('td');
-                            countCell.textContent = day.adCount;
-
-                            const adIDCell = document.createElement('td');
-                            if (day.adIDs && day.adIDs.length > 0) {
-                                adIDCell.textContent = day.adIDs.join(', ');
-                            } else {
-                                adIDCell.textContent = '-';
-                            }
-
-                            row.appendChild(dateCell);
-                            row.appendChild(countCell);
-                            row.appendChild(adIDCell);
-                            tbody.appendChild(row);
-                        });
-                    } else {
-                        const noDataRow = document.createElement('tr');
-                        noDataRow.innerHTML = '<td colspan="3" style="text-align: center; color: #999;">No daily data available</td>';
-                        tbody.appendChild(noDataRow);
-                    }
-
-                    table.appendChild(tbody);
-                    tableContainer.appendChild(table);
-
-                    orderHeader.addEventListener('click', function () {
-                        const toggle = this.querySelector('.order-toggle');
-                        const isVisible = tableContainer.style.display !== 'none';
-
-                        if (isVisible) {
-                            tableContainer.style.display = 'none';
-                            toggle.textContent = '▶';
-                            orderHeader.style.borderRadius = '10px';
-                        } else {
-                            tableContainer.style.display = 'block';
-                            toggle.textContent = '▼';
-                            orderHeader.style.borderRadius = '10px 10px 0 0';
-                        }
-                    });
-
-                    orderSection.appendChild(orderHeader);
-                    orderSection.appendChild(tableContainer);
-                    container.appendChild(orderSection);
-                });
-
-                console.log('✅ Created', data.orders.length, 'collapsible order sections');
-            } else {
-                console.error('❌ AJAX Error:', result);
-            }
-        })
-        .catch(error => {
-            console.error('❌ Error loading WZUN data:', error);
+    if (result) {
+        const data = result.data;
+        console.log('✅ WZUN Full Response:', result);
+        syracuseStationData.wzun = data;
+        updateSyracuseOverview();
+        console.log('📊 Orders count:', data.orders ? data.orders.length : 0);
+        renderOrderSections(data, 'wzunOrdersContainer', {
+            totalAdsId: 'wzunTotalAds',
+            dateRangeId: 'wzunDateRange'
         });
+    } else {
+        console.error('❌ WZUN failed to load after all retries.');
+    }
 }
 
 function loadGoogleAdsData() {
@@ -934,7 +537,6 @@ function loadGoogleAdsData() {
                 data.campaigns.forEach(campaign => {
                     const campaignCard = document.createElement('div');
                     campaignCard.className = 'campaign-card';
-                    // MODIFIED: Pass ageInDays as third parameter
                     campaignCard.onclick = () => showGoogleCampaignDetail(campaign.id, campaign.name, campaign.ageInDays);
 
                     const spendFormatted = '$' + campaign.spend.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -1007,9 +609,8 @@ function loadGoogleAdsData() {
 let currentGoogleCampaignId = null;
 let currentGoogleCampaignName = null;
 let currentGoogleTimeRange = 30; // Default to last month
-let currentGoogleCampaignAgeInDays = null; // NEW: Store campaign age
+let currentGoogleCampaignAgeInDays = null;
 
-// NEW FUNCTION: Update visible time range buttons based on campaign age
 function updateVisibleTimeRangeButtons(ageInDays) {
     const buttons = document.querySelectorAll('.time-range-btn');
 
@@ -1019,10 +620,9 @@ function updateVisibleTimeRangeButtons(ageInDays) {
         // "All Time" button is ALWAYS visible
         if (btnText.includes('All Time')) {
             btn.style.display = 'inline-block';
-            return; // Skip further checks for this button
+            return;
         }
 
-        // Show/hide other buttons based on campaign age
         if (btnText.includes('Last 3 Months') && ageInDays < 90) {
             btn.style.display = 'none';
         } else if (btnText.includes('Last 12 Months') && ageInDays < 365) {
@@ -1033,48 +633,40 @@ function updateVisibleTimeRangeButtons(ageInDays) {
     });
 }
 
-// MODIFIED: Reset function to also handle visibility
 function resetGoogleTimeRangeButtons() {
-    // Remove active class from all buttons
     document.querySelectorAll('.time-range-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    
-    // Add active class to the Last Month button (30 days)
+
     document.querySelectorAll('.time-range-btn').forEach(btn => {
         if (btn.textContent.includes('Last Month') || btn.getAttribute('onclick')?.includes('30')) {
             btn.classList.add('active');
         }
     });
-    
-    // Update button visibility based on campaign age
+
     if (currentGoogleCampaignAgeInDays !== null) {
         updateVisibleTimeRangeButtons(currentGoogleCampaignAgeInDays);
     }
 }
 
-// MODIFIED: Accept ageInDays parameter
 function showGoogleCampaignDetail(campaignId, campaignName, ageInDays = null) {
     currentGoogleCampaignId = campaignId;
     currentGoogleCampaignName = campaignName;
-    currentGoogleCampaignAgeInDays = ageInDays; // Store the age
-    currentGoogleTimeRange = 30; // Reset to default
+    currentGoogleCampaignAgeInDays = ageInDays;
+    currentGoogleTimeRange = 30;
 
     console.log('📊 Loading Google campaign:', campaignName, campaignId, 'Age:', ageInDays, 'days');
 
     const overview = document.getElementById('googleOverview');
     const detail = document.getElementById('googleCampaignDetail');
 
-    // Update title
     document.getElementById('googleCampaignDetailTitle').innerHTML = `
         <img src="https://dashboard.richardkimmedicine.com/wp-content/uploads/2025/12/Google-Logo-Edited.png" alt="Google Ads" class="option-logo">
         ${campaignName}
     `;
 
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Animate transition
     gsap.to(overview, {
         opacity: 0,
         x: -30,
@@ -1088,10 +680,7 @@ function showGoogleCampaignDetail(campaignId, campaignName, ageInDays = null) {
                 { opacity: 1, x: 0, duration: 0.3, ease: 'power2.inOut' }
             );
 
-            // Reset time range buttons and update visibility
             resetGoogleTimeRangeButtons();
-            
-            // Load campaign metrics
             loadGoogleCampaignMetrics(campaignId, currentGoogleTimeRange);
         }
     });
@@ -1101,7 +690,6 @@ function showGoogleOverview() {
     const overview = document.getElementById('googleOverview');
     const detail = document.getElementById('googleCampaignDetail');
 
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     gsap.to(detail, {
@@ -1123,13 +711,11 @@ function showGoogleOverview() {
 function selectGoogleTimeRange(days) {
     currentGoogleTimeRange = days;
 
-    // Update button states
     document.querySelectorAll('.time-range-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
 
-    // Reload metrics with new time range
     loadGoogleCampaignMetrics(currentGoogleCampaignId, days);
 }
 
@@ -1153,7 +739,6 @@ function loadGoogleCampaignMetrics(campaignId, days) {
             if (result.success && result.data) {
                 const data = result.data;
 
-                // Format values
                 const spentFormatted = '$' + data.spend.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
                 const impressionsFormatted = data.impressions >= 1000000
@@ -1162,7 +747,6 @@ function loadGoogleCampaignMetrics(campaignId, days) {
                         ? (data.impressions / 1000).toFixed(1) + 'K'
                         : data.impressions.toLocaleString();
 
-                // Update display
                 document.getElementById('googleCampaignSpent').textContent = spentFormatted;
                 document.getElementById('googleCampaignImpressions').textContent = impressionsFormatted;
                 document.getElementById('googleCampaignClicks').textContent = data.clicks.toLocaleString();
@@ -1197,7 +781,6 @@ function loadFacebookAdsData() {
             if (result.success && result.data) {
                 const data = result.data;
 
-                // Get campaigns grid container
                 const grid = document.getElementById('facebookCampaignsGrid');
                 if (!grid) return;
 
@@ -1208,13 +791,11 @@ function loadFacebookAdsData() {
                     return;
                 }
 
-                // Create campaign cards
                 data.campaigns.forEach(campaign => {
                     const card = document.createElement('div');
                     card.className = 'campaign-card';
                     card.onclick = () => showFacebookCampaignDetail(campaign.id, campaign.name);
 
-                    // Format budget
                     const budgetFormatted = '$' + campaign.budget.toLocaleString('en-US', {
                         minimumFractionDigits: 0,
                         maximumFractionDigits: 0
@@ -1261,7 +842,6 @@ function loadFacebookAdsData() {
                     grid.appendChild(card);
                 });
 
-                // Calculate total budget and update counts
                 let totalBudget = 0;
                 data.campaigns.forEach(campaign => {
                     totalBudget += (campaign.budget || 0);
@@ -1288,15 +868,13 @@ function loadFacebookAdsData() {
 // Facebook Campaign Navigation
 let currentFacebookCampaignId = null;
 let currentFacebookCampaignName = null;
-let currentFacebookTimeRange = 30; // Default to last month
+let currentFacebookTimeRange = 30;
 
 function resetFacebookTimeRangeButtons() {
-    // Remove active class from all Facebook time range buttons
     document.querySelectorAll('.facebook-time-btn').forEach(btn => {
         btn.classList.remove('active');
     });
 
-    // Add active class to the Last Month button
     document.querySelectorAll('.facebook-time-btn').forEach(btn => {
         if (btn.textContent.includes('Last Month') || btn.getAttribute('onclick')?.includes('30')) {
             btn.classList.add('active');
@@ -1307,20 +885,17 @@ function resetFacebookTimeRangeButtons() {
 function showFacebookCampaignDetail(campaignId, campaignName) {
     currentFacebookCampaignId = campaignId;
     currentFacebookCampaignName = campaignName;
-    currentFacebookTimeRange = 30; // Reset to default
+    currentFacebookTimeRange = 30;
 
     console.log('📊 Loading Facebook campaign:', campaignName, campaignId);
 
     const overview = document.getElementById('facebookOverview');
     const detail = document.getElementById('facebookCampaignDetail');
 
-    // Update title
     document.getElementById('campaignDetailTitle').textContent = campaignName;
 
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Animate transition
     gsap.to(overview, {
         opacity: 0,
         x: -30,
@@ -1334,10 +909,7 @@ function showFacebookCampaignDetail(campaignId, campaignName) {
                 { opacity: 1, x: 0, duration: 0.3, ease: 'power2.inOut' }
             );
 
-            // Reset time range buttons
             resetFacebookTimeRangeButtons();
-
-            // Load ad sets data with default time range
             loadCampaignAdSets(currentFacebookCampaignId, currentFacebookTimeRange);
         }
     });
@@ -1347,7 +919,6 @@ function showFacebookOverview() {
     const overview = document.getElementById('facebookOverview');
     const detail = document.getElementById('facebookCampaignDetail');
 
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     gsap.to(detail, {
@@ -1369,20 +940,16 @@ function showFacebookOverview() {
 function selectFacebookTimeRange(days) {
     currentFacebookTimeRange = days;
 
-    // Update button states
     document.querySelectorAll('.facebook-time-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
 
-    // Reload ad sets with new time range
     loadCampaignAdSets(currentFacebookCampaignId, days);
 }
 
 function loadCampaignAdSets(campaignId, days) {
     console.log(`🔵 loadCampaignAdSets called for: ${campaignId}, last ${days} days`);
-
-    // ADD THIS DEBUG LOG
     console.log('📤 Sending to WordPress:', {
         action: 'fetch_facebook_campaign_adsets',
         campaign_id: campaignId,
@@ -1406,11 +973,9 @@ function loadCampaignAdSets(campaignId, days) {
             if (result.success && result.data) {
                 const data = result.data;
 
-                // Update summary
                 const totalAdSetsEl = document.getElementById('campaignTotalAdSets');
                 if (totalAdSetsEl) totalAdSetsEl.textContent = data.totalAdSets || '0';
 
-                // Get grid
                 const grid = document.getElementById('facebookAdSetGrid');
                 if (!grid) return;
 
@@ -1421,7 +986,6 @@ function loadCampaignAdSets(campaignId, days) {
                     return;
                 }
 
-                // Create ad set cards
                 data.adsets.forEach(adset => {
                     const card = document.createElement('div');
                     card.className = 'campaign-card';
@@ -1488,6 +1052,14 @@ function loadCampaignAdSets(campaignId, days) {
         });
 }
 
+// ============================================================
+// PAGE LOAD — Stagger station fetches 4-5s apart to stay
+// well under the Google Sheets 60 reads/minute quota limit.
+// Each station workflow reads up to 4 sheet tabs, so spacing
+// them 4-5 seconds apart keeps concurrent reads comfortably
+// below the quota ceiling. Retry logic handles any remaining
+// transient failures automatically.
+// ============================================================
 window.addEventListener('load', function () {
     setTimeout(() => {
         loadGoogleAdsData();
@@ -1495,10 +1067,10 @@ window.addEventListener('load', function () {
         loadTVRadioData();
         loadAlbanyData();
         loadMontrealData();
-        // Stagger station loads 2 seconds apart
-        setTimeout(() => loadWTLAData(), 0);
-        setTimeout(() => loadWKRLData(), 2000);
-        setTimeout(() => loadWKTWData(), 4000);
-        setTimeout(() => loadWZUNData(), 6000);
+        // Station fetches staggered at 5-second intervals
+        setTimeout(() => loadWTLAData(),  0);
+        setTimeout(() => loadWKRLData(),  5000);
+        setTimeout(() => loadWKTWData(),  10000);
+        setTimeout(() => loadWZUNData(),  15000);
     }, 500);
 });
