@@ -44,7 +44,7 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.1.3', // Increment version to bust cache
+        '1.1.5', // Increment version to bust cache
         true
     );
     
@@ -75,7 +75,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.3.0', // Increment to bust cache
+        '1.3.3', // Increment to bust cache
         true
     );
     
