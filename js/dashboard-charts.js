@@ -128,18 +128,27 @@ async function fetchAllTVRadioData() {
         return fd;
     };
 
-    const [wtla, wkrl, wktw, wzun] = await Promise.all([
-        fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: makeBody('fetch_wtla_ads') }).then(r => r.json()),
-        fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: makeBody('fetch_tvradio_ads') }).then(r => r.json()),
-        fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: makeBody('fetch_wktw_ads') }).then(r => r.json()),
-        fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: makeBody('fetch_wzun_ads') }).then(r => r.json())
-    ]);
+    const fetchStation = (action) =>
+        fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: makeBody(action) })
+            .then(r => r.json());
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    // Stagger requests 5s apart to stay under the
+    // Google Sheets 60 reads/minute quota ceiling.
+    const wtla = await fetchStation('fetch_wtla_ads');
+    await sleep(5000);
+    const wkrl = await fetchStation('fetch_tvradio_ads');
+    await sleep(5000);
+    const wktw = await fetchStation('fetch_wktw_ads');
+    await sleep(5000);
+    const wzun = await fetchStation('fetch_wzun_ads');
 
     return {
         wtla: wtla.success ? wtla.data : null,
         wkrl: wkrl.success ? wkrl.data : null,
         wktw: wktw.success ? wktw.data : null,
-        wzun: wzun.success ? wzun.data : null
+        wzun: wzun.success ? wzun.data : null,
     };
 }
 
