@@ -1,15 +1,15 @@
 /**
  * Dashboard Charts - Overview Chart
- * Displays 24 months of data in monthly view
+ * Displays 104 weeks (~2 years) of data in weekly view
  * Series:
- *   - Total Google Ads Spend (bright green bar, stack group A)
- *   - Total Meta Ads Spend (bright blue bar, stack group A)
- *   - Individual Google campaigns (muted green bars, stack group B) — hidden by default
- *   - Individual Meta campaigns (muted blue bars, stack group B) — hidden by default
- *   - Historical Google aggregate (muted green bar, stack group B) — hidden by default
- *   - Historical Meta aggregate (muted blue bar, stack group B) — hidden by default
+ *   - Total Google Ads Spend (bright green bar)
+ *   - Total Meta Ads Spend (bright blue bar)
+ *   - Individual Google campaigns (muted green bars) — hidden by default
+ *   - Individual Meta campaigns (muted blue bars) — hidden by default
+ *   - Historical Google aggregate (muted green bar) — hidden by default
+ *   - Historical Meta aggregate (muted blue bar) — hidden by default
  *   - Total TV / Radio Ads (red line)
- * Initial view shows last 12 months, pan left to view prior 12 months
+ * Initial view shows last 52 weeks, pan left to view prior 52 weeks
  */
 
 // ============================================================
@@ -156,23 +156,56 @@ async function fetchAllTVRadioData() {
 // DATE HELPERS
 // ============================================================
 
-function generateMonthlyLabels(count = 24) {
+/**
+ * Generate weekly labels for the chart.
+ * Each label is the Monday of that week: "May 5 2025"
+ * Produces `weekCount` labels ending on the most recent Monday.
+ */
+function generateWeeklyLabels(weekCount = 104) {
     const labels = [];
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const now = new Date();
-    for (let i = count - 1; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        labels.push(`${months[d.getMonth()]} ${d.getFullYear()}`);
+
+    // Find the most recent Monday (or today if today is Monday)
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const lastMonday = new Date(now);
+    lastMonday.setDate(now.getDate() - daysToLastMonday);
+    lastMonday.setHours(0, 0, 0, 0);
+
+    for (let i = weekCount - 1; i >= 0; i--) {
+        const weekStart = new Date(lastMonday);
+        weekStart.setDate(lastMonday.getDate() - (i * 7));
+        labels.push(`${months[weekStart.getMonth()]} ${weekStart.getDate()} ${weekStart.getFullYear()}`);
     }
+
     return labels;
 }
 
-function getMonthLabel(dateStr) {
+/**
+ * Convert a YYYY-MM-DD date string into a weekly label matching
+ * the format produced by generateWeeklyLabels().
+ * Snaps to the Monday of the given date's week.
+ */
+function weekDateToLabel(dateStr) {
+    if (!dateStr) return null;
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const [year, month] = dateStr.split('-').map(Number);
-    return `${months[month - 1]} ${year}`;
+
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+
+    // Snap to Monday of this week
+    const dow = d.getDay(); // 0=Sun, 1=Mon...
+    const daysToMonday = dow === 0 ? 6 : dow - 1;
+    d.setDate(d.getDate() - daysToMonday);
+
+    return `${months[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
 }
 
+/**
+ * Parse a radio date string in M/D/YY or M/D/YYYY format.
+ * Returns a Date object or null on failure.
+ */
 function parseRadioDate(dateStr) {
     if (!dateStr || dateStr === 'N/A' || dateStr === '-') return null;
     try {
@@ -186,41 +219,49 @@ function parseRadioDate(dateStr) {
 }
 
 // ============================================================
-// DATA PROCESSING
+// DATA PROCESSING — AGGREGATION HELPERS
 // ============================================================
 
 /**
- * Aggregate a campaign's weeklyBreakdown into monthly totals
+ * Aggregate a campaign's weeklyBreakdown into per-week totals,
+ * returning a rounded array aligned to the provided labels array.
+ * Uses week.week (YYYY-MM-DD) → weekDateToLabel() for label matching.
  */
-function aggregateCampaignToMonths(campaign, labels) {
+function aggregateCampaignToWeeks(campaign, labels) {
     const totals = new Array(labels.length).fill(0);
     if (!campaign.weeklyBreakdown || campaign.weeklyBreakdown.length === 0) return totals;
+
     campaign.weeklyBreakdown.forEach(week => {
-        const idx = labels.indexOf(getMonthLabel(week.week));
+        const label = weekDateToLabel(week.week);
+        if (!label) return;
+        const idx = labels.indexOf(label);
         if (idx !== -1) totals[idx] += week.spend || 0;
     });
+
     return totals.map(v => parseFloat(v.toFixed(2)));
 }
 
-// Helper: get raw monthly numeric totals from a campaign (no grouping)
+/**
+ * Same as aggregateCampaignToWeeks but returns raw (unrounded) values.
+ * Used for building aggregate totals before final rounding.
+ */
 function aggregateCampaignRaw(campaign, labels) {
     const totals = new Array(labels.length).fill(0);
     if (!campaign.weeklyBreakdown || campaign.weeklyBreakdown.length === 0) return totals;
+
     campaign.weeklyBreakdown.forEach(week => {
-        const idx = labels.indexOf(getMonthLabel(week.week));
+        const label = weekDateToLabel(week.week);
+        if (!label) return;
+        const idx = labels.indexOf(label);
         if (idx !== -1) totals[idx] += week.spend || 0;
     });
+
     return totals;
 }
 
-// Helper: convert a plain value array + labels into grouped data points
-function toGroupedData(valArray, labels, group) {
-    return labels.map((label, i) => ({
-        x: label,
-        y: parseFloat((valArray[i] || 0).toFixed(2)),
-        group
-    }));
-}
+// ============================================================
+// DATA PROCESSING — MAIN
+// ============================================================
 
 /**
  * Main data processing function.
@@ -233,7 +274,7 @@ function toGroupedData(valArray, labels, group) {
 function processWelcomeData(googleData, metaData, tvRadioData) {
     console.log('📊 Processing welcome chart data...');
 
-    const labels = generateMonthlyLabels(24);
+    const labels = generateWeeklyLabels(104);
 
     // Reset campaign series metadata
     campaignSeriesMeta = [];
@@ -251,13 +292,13 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // Build total aggregate (all campaigns)
     const googleTotals = new Array(labels.length).fill(0);
     googleAllCampaigns.forEach(campaign => {
-        const monthly = aggregateCampaignRaw(campaign, labels);
-        monthly.forEach((v, i) => { googleTotals[i] += v; });
+        const weekly = aggregateCampaignRaw(campaign, labels);
+        weekly.forEach((v, i) => { googleTotals[i] += v; });
     });
 
     // Build per-active-campaign series
     const googleCampaignSeries = googleActiveCampaigns.map(campaign => {
-        const data = aggregateCampaignToMonths(campaign, labels);
+        const data = aggregateCampaignToWeeks(campaign, labels);
         const seriesName = `G: ${campaign.name}`;
         campaignSeriesMeta.push({
             name: campaign.name,
@@ -276,15 +317,15 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // Build historical Google aggregate
     const googleHistoricalTotals = new Array(labels.length).fill(0);
     googleInactiveCampaigns.forEach(campaign => {
-        const monthly = aggregateCampaignRaw(campaign, labels);
-        monthly.forEach((v, i) => { googleHistoricalTotals[i] += v; });
+        const weekly = aggregateCampaignRaw(campaign, labels);
+        weekly.forEach((v, i) => { googleHistoricalTotals[i] += v; });
     });
     const googleHistoricalRounded = googleHistoricalTotals.map(v => parseFloat(v.toFixed(2)));
     const hasGoogleHistorical = googleHistoricalRounded.some(v => v > 0);
     if (hasGoogleHistorical) {
         campaignSeriesMeta.push({
             name: 'Inactive Campaigns',
-            seriesName: 'G: Inactive Campaigns', // ← matches series name below
+            seriesName: 'G: Inactive Campaigns',
             platform: 'google',
             isHistorical: true
         });
@@ -306,13 +347,13 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // Build total aggregate (all chart campaigns)
     const metaTotals = new Array(labels.length).fill(0);
     metaChartCampaigns.forEach(campaign => {
-        const monthly = aggregateCampaignRaw(campaign, labels);
-        monthly.forEach((v, i) => { metaTotals[i] += v; });
+        const weekly = aggregateCampaignRaw(campaign, labels);
+        weekly.forEach((v, i) => { metaTotals[i] += v; });
     });
 
     // Build per-active-campaign series
     const metaCampaignSeries = metaActiveCampaigns.map(campaign => {
-        const data = aggregateCampaignToMonths(campaign, labels);
+        const data = aggregateCampaignToWeeks(campaign, labels);
         const seriesName = `M: ${campaign.name}`;
         campaignSeriesMeta.push({
             name: campaign.name,
@@ -331,15 +372,15 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // Build historical Meta aggregate
     const metaHistoricalTotals = new Array(labels.length).fill(0);
     metaInactiveCampaigns.forEach(campaign => {
-        const monthly = aggregateCampaignRaw(campaign, labels);
-        monthly.forEach((v, i) => { metaHistoricalTotals[i] += v; });
+        const weekly = aggregateCampaignRaw(campaign, labels);
+        weekly.forEach((v, i) => { metaHistoricalTotals[i] += v; });
     });
     const metaHistoricalRounded = metaHistoricalTotals.map(v => parseFloat(v.toFixed(2)));
     const hasMetaHistorical = metaHistoricalRounded.some(v => v > 0);
     if (hasMetaHistorical) {
         campaignSeriesMeta.push({
             name: 'Inactive Campaigns',
-            seriesName: 'M: Inactive Campaigns', // ← matches series name below
+            seriesName: 'M: Inactive Campaigns',
             platform: 'meta',
             isHistorical: true
         });
@@ -349,18 +390,26 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // TV / RADIO
     // ----------------------------------------------------------------
     const radioTotals = new Array(labels.length).fill(0);
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
     ['wtla', 'wkrl', 'wktw', 'wzun'].forEach(stationKey => {
         const stationData = tvRadioData[stationKey];
         if (!stationData || !stationData.orders) return;
         console.log(`📻 Processing ${stationKey}`);
+
         stationData.orders.forEach(order => {
             if (!order.dailyBreakdown) return;
+
             order.dailyBreakdown.forEach(day => {
                 const date = parseRadioDate(day.date);
                 if (!date) return;
-                const monthLabel = `${months[date.getMonth()]} ${date.getFullYear()}`;
-                const idx = labels.indexOf(monthLabel);
+
+                // Build a YYYY-MM-DD string then snap to Monday via weekDateToLabel()
+                const yyyy = date.getFullYear();
+                const mm   = String(date.getMonth() + 1).padStart(2, '0');
+                const dd   = String(date.getDate()).padStart(2, '0');
+                const weekLabel = weekDateToLabel(`${yyyy}-${mm}-${dd}`);
+
+                const idx = labels.indexOf(weekLabel);
                 if (idx !== -1) radioTotals[idx] += day.adCount || 0;
             });
         });
@@ -372,9 +421,9 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     const googleRounded = googleTotals.map(v => parseFloat(v.toFixed(2)));
     const metaRounded   = metaTotals.map(v => parseFloat(v.toFixed(2)));
 
-    console.log('✅ Google monthly totals:', googleRounded);
-    console.log('✅ Meta monthly totals:', metaRounded);
-    console.log('✅ Radio monthly totals:', radioTotals);
+    console.log('✅ Google weekly totals:', googleRounded);
+    console.log('✅ Meta weekly totals:', metaRounded);
+    console.log('✅ Radio weekly totals:', radioTotals);
     console.log('✅ Campaign series meta:', campaignSeriesMeta);
 
     // ----------------------------------------------------------------
@@ -400,7 +449,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 
         // Google historical aggregate (hidden by default)
         ...(hasGoogleHistorical ? [{
-            name: 'G: Inactive Campaigns', // ← tooltip label (was 'G: Historical')
+            name: 'G: Inactive Campaigns',
             type: 'bar',
             data: googleHistoricalRounded,
             color: GOOGLE_MUTED
@@ -411,7 +460,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 
         // Meta historical aggregate (hidden by default)
         ...(hasMetaHistorical ? [{
-            name: 'M: Inactive Campaigns', // ← tooltip label (was 'M: Historical')
+            name: 'M: Inactive Campaigns',
             type: 'bar',
             data: metaHistoricalRounded,
             color: META_MUTED
@@ -434,10 +483,10 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
 // ============================================================
 
 function createWelcomeChart(chartData) {
-    const allLabels   = chartData.labels;
-    const totalMonths = allLabels.length; // 24
-    const initialMin  = allLabels[totalMonths - 12];
-    const initialMax  = allLabels[totalMonths - 1];
+    const allLabels  = chartData.labels;
+    const totalWeeks = allLabels.length; // 104
+    const initialMin = allLabels[totalWeeks - 52]; // show last 52 weeks by default
+    const initialMax = allLabels[totalWeeks - 1];
 
     const strokeWidths = chartData.series.map(s => s.type === 'line' ? 3 : 0);
     const fillOpacity  = chartData.series.map(s => s.type === 'line' ? 1 : 0.9);
@@ -485,6 +534,8 @@ function createWelcomeChart(chartData) {
             animations: { enabled: true, easing: 'easeinout', speed: 600 },
             events: {
                 mounted: function(chartCtx) {
+                    console.log('🎯 Chart mounted fired, series count:', chartData.series.length);
+
                     // Hide all campaign detail series on mount
                     chartData.series.forEach(s => {
                         if (s.name.startsWith('G: ') || s.name.startsWith('M: ')) {
@@ -492,13 +543,16 @@ function createWelcomeChart(chartData) {
                         }
                     });
 
-                    // Set initial zoom to last 12 months
+                    console.log('🔍 Zooming to:', initialMin, '->', initialMax);
+                    console.log('🔍 Indices:', allLabels.indexOf(initialMin), allLabels.indexOf(initialMax));
+
+                    // Set initial zoom to last 52 weeks
                     chartCtx.zoomX(
                         allLabels.indexOf(initialMin),
                         allLabels.indexOf(initialMax)
                     );
 
-                    chartNavInit(totalMonths, initialMin, initialMax, allLabels);
+                    chartNavInit(totalWeeks, initialMin, initialMax, allLabels);
                     renderChartNavPanel();
                     renderCampaignTogglePanel();
                 }
@@ -517,7 +571,7 @@ function createWelcomeChart(chartData) {
         },
         plotOptions: {
             bar: {
-                columnWidth: '55%',
+                columnWidth: '80%', // wider columns since weekly bars are narrower
                 borderRadius: 0
             }
         },
@@ -530,23 +584,24 @@ function createWelcomeChart(chartData) {
         xaxis: {
             categories: allLabels,
             type: 'category',
-            title: { text: 'Month', style: { fontSize: '16px', fontWeight: 600 } },
+            title: { text: 'Week', style: { fontSize: '16px', fontWeight: 600 } },
             tickPlacement: 'on',
-            labels: { rotate: -45, rotateAlways: false, style: { fontSize: '11px' } },
+            labels: {
+                rotate: -45,
+                rotateAlways: false,
+                style: { fontSize: '11px' },
+                // Show every 4th label to avoid crowding on 52-week view
+                formatter: function(val, i) {
+                    return (i % 4 === 0) ? val : '';
+                }
+            },
             crosshairs: {
                 show: true,
-                fill: {
-                    type: 'solid',
-                    color: '#ff6600'
-                }
+                fill: { type: 'solid', color: '#ff6600' }
             },
             tooltip: {
                 enabled: true,
-                style: {
-                    fontSize: '12px',
-                    background: '#ff6600',
-                    color: '#ffffff'
-                }
+                style: { fontSize: '12px', background: '#ff6600', color: '#ffffff' }
             }
         },
         yaxis,
@@ -571,7 +626,7 @@ function createWelcomeChart(chartData) {
             style: { fontSize: '20px', fontWeight: 600 }
         },
         subtitle: {
-            text: 'Showing last 12 months — pan left to view prior history',
+            text: 'Showing last 52 weeks — pan left to view prior history',
             align: 'center',
             style: { fontSize: '12px', color: '#999' }
         },
@@ -593,17 +648,17 @@ function createWelcomeChart(chartData) {
 // CHART NAVIGATION — scroll buttons + zoom controls
 // ============================================================
 
-// Tracks current visible window as index range into allLabels (0–23)
+// Tracks current visible window as index range into allLabels (0–103)
 const chartNav = {
-    min: 0,       // will be set after chart mounts
-    max: 11,      // will be set after chart mounts
-    total: 24,    // total months available
-    step: 3,      // months per 3-month scroll click
-    zoomStep: 3   // months to add/remove per zoom click
+    min: 0,        // will be set after chart mounts
+    max: 51,       // will be set after chart mounts
+    total: 104,    // total weeks available
+    step: 4,       // weeks per multi-week scroll click (~1 month)
+    zoomStep: 4    // weeks to add/remove per zoom click
 };
 
-function chartNavInit(totalMonths, initialMin, initialMax, allLabels) {
-    chartNav.total = totalMonths;
+function chartNavInit(totalWeeks, initialMin, initialMax, allLabels) {
+    chartNav.total = totalWeeks;
     chartNav.min   = allLabels.indexOf(initialMin);
     chartNav.max   = allLabels.indexOf(initialMax);
 }
@@ -681,9 +736,9 @@ function chartZoomOut() {
 }
 
 function chartZoomReset() {
-    // Reset to default 12-month view (last 12 months)
+    // Reset to default 52-week view (last 52 weeks)
     chartNav.max = chartNav.total - 1;
-    chartNav.min = chartNav.max - 11;
+    chartNav.min = chartNav.max - 51;
     chartNavApply();
 }
 
@@ -696,22 +751,22 @@ function renderChartNavPanel() {
 
     panel.innerHTML = `
         <div class="chart-nav">
-            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeft()" title="Scroll back 3 months">
-                &#9664; <span>3 Months</span>
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeft()" title="Scroll back 4 weeks">
+                &#9664; <span>4 Weeks</span>
             </button>
-            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeftOne()" title="Scroll back 1 month">
-                &#9664; <span>1 Month</span>
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollLeftOne()" title="Scroll back 1 week">
+                &#9664; <span>1 Week</span>
             </button>
             <div class="chart-nav__zoom">
                 <button class="chart-nav__btn chart-nav__btn--zoom" onclick="chartZoomIn()" title="Zoom in">+</button>
-                <button class="chart-nav__btn chart-nav__btn--reset" onclick="chartZoomReset()" title="Reset to last 12 months">Reset</button>
+                <button class="chart-nav__btn chart-nav__btn--reset" onclick="chartZoomReset()" title="Reset to last 52 weeks">Reset</button>
                 <button class="chart-nav__btn chart-nav__btn--zoom" onclick="chartZoomOut()" title="Zoom out">−</button>
             </div>
-            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRightOne()" title="Scroll forward 1 month">
-                <span>1 Month</span> &#9654;
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRightOne()" title="Scroll forward 1 week">
+                <span>1 Week</span> &#9654;
             </button>
-            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRight()" title="Scroll forward 3 months">
-                <span>3 Months</span> &#9654;
+            <button class="chart-nav__btn chart-nav__btn--arrow" onclick="chartScrollRight()" title="Scroll forward 4 weeks">
+                <span>4 Weeks</span> &#9654;
             </button>
         </div>
     `;
