@@ -95,11 +95,17 @@ async function fetchGoogleAdsOverview() {
     const result   = await response.json();
 
     if (result.success && result.data) {
+        const data = result.data;
         console.log('✅ Google Ads Overview received');
-        return result.data;
+        console.log('🔬 Google campaigns count:', data.campaigns?.length);
+        console.log('🔬 Google first campaign:', data.campaigns?.[0]?.name);
+        console.log('🔬 Google first weeklyBreakdown entry:', data.campaigns?.[0]?.weeklyBreakdown?.[0]);
+        console.log('🔬 Google full data keys:', Object.keys(data));
+        return data;
     }
 
     console.warn('⚠️ Google Ads Overview fetch failed:', result);
+    console.warn('⚠️ Full result object:', result);
     return { campaigns: [] };
 }
 
@@ -137,11 +143,11 @@ async function fetchAllTVRadioData() {
     // Stagger requests 5s apart to stay under the
     // Google Sheets 60 reads/minute quota ceiling.
     const wtla = await fetchStation('fetch_wtla_ads');
-    await sleep(5000);
+    await sleep(3000);
     const wkrl = await fetchStation('fetch_tvradio_ads');
-    await sleep(5000);
+    await sleep(3000);
     const wktw = await fetchStation('fetch_wktw_ads');
-    await sleep(5000);
+   await sleep(3000);
     const wzun = await fetchStation('fetch_wzun_ads');
 
     return {
@@ -272,26 +278,39 @@ function aggregateCampaignRaw(campaign, labels) {
  * Also populates the global campaignSeriesMeta array for toggle panel rendering.
  */
 function processWelcomeData(googleData, metaData, tvRadioData) {
-    console.log('📊 Processing welcome chart data...');
-
+    console.log("=== processWelcomeData START ===");
+    console.log("googleData:", googleData);
+    console.log("googleData.campaigns:", googleData?.campaigns);
+    console.log("googleData.campaigns length:", googleData?.campaigns?.length);
+    console.log("metaData keys:", Object.keys(metaData || {}));
     const labels = generateWeeklyLabels(104);
+    console.log("First 3 weekly labels:", labels.slice(0, 3));
+    console.log("Last 3 weekly labels:", labels.slice(-3));
 
     // Reset campaign series metadata
     campaignSeriesMeta = [];
 
     // ----------------------------------------------------------------
     // GOOGLE ADS
+    // card campaigns carry status; chartData campaigns carry weeklyBreakdown
     // ----------------------------------------------------------------
-    const googleAllCampaigns = googleData.campaigns || [];
-    console.log(`🟢 Google: ${googleAllCampaigns.length} total campaigns`);
+    const googleCardCampaigns  = googleData.campaigns || [];
+    const googleChartCampaigns = (googleData.chartData && googleData.chartData.campaigns)
+        ? googleData.chartData.campaigns
+        : [];
+    const googleEnabledIds = new Set(
+        googleCardCampaigns.filter(c => c.status === 'ENABLED').map(c => c.id)
+    );
 
-    const googleActiveCampaigns   = googleAllCampaigns.filter(c => c.status === 'ENABLED');
-    const googleInactiveCampaigns = googleAllCampaigns.filter(c => c.status !== 'ENABLED');
+    console.log(`🟢 Google: ${googleChartCampaigns.length} chart campaigns, ${googleCardCampaigns.length} card campaigns`);
+
+    const googleActiveCampaigns   = googleChartCampaigns.filter(c => googleEnabledIds.has(c.id));
+    const googleInactiveCampaigns = googleChartCampaigns.filter(c => !googleEnabledIds.has(c.id));
     console.log(`🟢 Google active: ${googleActiveCampaigns.length}, inactive: ${googleInactiveCampaigns.length}`);
 
-    // Build total aggregate (all campaigns)
+    // Build total aggregate (all chart campaigns)
     const googleTotals = new Array(labels.length).fill(0);
-    googleAllCampaigns.forEach(campaign => {
+    googleChartCampaigns.forEach(campaign => {
         const weekly = aggregateCampaignRaw(campaign, labels);
         weekly.forEach((v, i) => { googleTotals[i] += v; });
     });
@@ -421,7 +440,8 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     const googleRounded = googleTotals.map(v => parseFloat(v.toFixed(2)));
     const metaRounded   = metaTotals.map(v => parseFloat(v.toFixed(2)));
 
-    console.log('✅ Google weekly totals:', googleRounded);
+console.log('✅ Google weekly totals (non-zero weeks):', googleRounded.filter(v => v > 0).length, 'weeks with spend');
+console.log('✅ Google sample (last 5 weeks):', googleRounded.slice(-5));
     console.log('✅ Meta weekly totals:', metaRounded);
     console.log('✅ Radio weekly totals:', radioTotals);
     console.log('✅ Campaign series meta:', campaignSeriesMeta);
@@ -590,9 +610,13 @@ function createWelcomeChart(chartData) {
                 rotate: -45,
                 rotateAlways: false,
                 style: { fontSize: '11px' },
-                // Show every 4th label to avoid crowding on 52-week view
-                formatter: function(val, i) {
-                    return (i % 4 === 0) ? val : '';
+                // Show only the first week of each month to avoid crowding
+                formatter: function(val) {
+                    if (!val || typeof val !== 'string') return '';
+                    const parts = val.split(' ');
+                    if (parts.length < 2) return '';
+                    const day = parseInt(parts[1], 10);
+                    return day <= 7 ? val : '';
                 }
             },
             crosshairs: {
