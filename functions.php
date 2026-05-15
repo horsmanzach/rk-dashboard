@@ -829,6 +829,38 @@ add_action('wp_ajax_fetch_facebook_ads_summary', 'fetch_facebook_ads_summary');
 add_action('wp_ajax_nopriv_fetch_facebook_ads_summary', 'fetch_facebook_ads_summary');
 
 
+// AJAX endpoint for New Patient Leads ───────────────────────────────────────
+add_action('wp_ajax_fetch_new_patients',        'fetch_new_patients_callback');
+add_action('wp_ajax_nopriv_fetch_new_patients', 'fetch_new_patients_callback');
+
+function fetch_new_patients_callback() {
+    check_ajax_referer('dashboard_nonce', 'nonce');
+
+    $webhook_url = 'https://automation.magnawebservices.com/webhook/new-patients';
+
+    $response = wp_remote_post($webhook_url, [
+        'timeout' => 30,
+        'headers' => ['Content-Type' => 'application/json'],
+        'body'    => json_encode([]),
+    ]);
+
+    if (is_wp_error($response)) {
+        wp_send_json_error('Webhook request failed: ' . $response->get_error_message());
+        return;
+    }
+
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+
+    if (!$data) {
+        wp_send_json_error('Invalid JSON response from webhook');
+        return;
+    }
+
+    wp_send_json_success($data);
+}
+
+
 /**
  * Future endpoints for Google and Facebook ads
  */
