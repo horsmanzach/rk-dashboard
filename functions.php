@@ -35,6 +35,14 @@ function rk_protect_dashboard_page() {
 }
 add_action( 'template_redirect', 'rk_protect_dashboard_page' );
 
+/**
+ * Redirect all users to dashboard after login
+ */
+function rk_login_redirect( $redirect_to, $request, $user ) {
+    return 'https://dashboard.richardkimmedicine.com/dashboard';
+}
+add_filter( 'login_redirect', 'rk_login_redirect', 10, 3 );
+
 
 /**
  * Enqueue Ad Dashboard Scripts and Styles
