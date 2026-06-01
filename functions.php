@@ -24,6 +24,18 @@ function my_login_logo_url_title() {
     return 'Richard Kim MD';
 }
 
+/**----
+ * Redirect non-logged-in users away from the dashboard page
+ -----*/
+function rk_protect_dashboard_page() {
+    if ( is_page( 'dashboard' ) && ! is_user_logged_in() ) {
+        wp_redirect( wp_login_url( get_permalink() ) );
+        exit;
+    }
+}
+add_action( 'template_redirect', 'rk_protect_dashboard_page' );
+
+
 /**
  * Enqueue Ad Dashboard Scripts and Styles
  * Add this to your child theme's functions.php file
