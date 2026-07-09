@@ -2,13 +2,14 @@
  * Dashboard Charts - Overview Chart
  * Displays 104 weeks (~2 years) of data in weekly view
  * Series:
- *   - Total Google Ads Spend (bright green bar)
- *   - Total Meta Ads Spend (bright blue bar)
- *   - Individual Google campaigns (muted green bars) — hidden by default
- *   - Individual Meta campaigns (muted blue bars) — hidden by default
- *   - Historical Google aggregate (muted green bar) — hidden by default
- *   - Historical Meta aggregate (muted blue bar) — hidden by default
- *   - Total TV / Radio Ads (red line)
+ *   - Total Google Ads Spend (bright green line, thick solid, markers)
+ *   - Total Meta Ads Spend (bright blue line, thick solid, markers)
+ *   - Individual Google campaigns (muted green lines, thin dashed) — hidden by default
+ *   - Individual Meta campaigns (muted blue lines, thin dashed) — hidden by default
+ *   - Historical Google aggregate (muted green line, thin dashed) — hidden by default
+ *   - Historical Meta aggregate (muted blue line, thin dashed) — hidden by default
+ *   - Total TV / Radio Ads (red line, thick solid, markers) — unchanged
+ *   - New Patient Leads (orange bar) — third Y-axis
  * Initial view shows last 52 weeks, pan left to view prior 52 weeks
  */
 
@@ -21,6 +22,7 @@ const GOOGLE_MUTED        = '#8fc9a3'; // Muted green — individual campaigns
 const META_COLOR          = '#1877f2'; // Bright blue — total
 const META_MUTED          = '#80b3f8'; // Muted blue — individual campaigns
 const RADIO_COLOR         = '#ff6b6b'; // Red line — TV/Radio
+const PATIENT_COLOR       = '#c9a84c'; // Soft warm amber - muted gold
 
 let welcomeChart      = null;
 let chartInitialized  = false;
@@ -61,13 +63,14 @@ async function fetchWelcomeChartData() {
     try {
         showChartLoading();
 
-        const [googleData, metaData, tvRadioData] = await Promise.all([
+        const [googleData, metaData, tvRadioData, patientData] = await Promise.all([
             fetchGoogleAdsOverview(),
             fetchMetaAdsOverview(),
-            fetchAllTVRadioData()
+            fetchAllTVRadioData(),
+            fetchNewPatientsData()
         ]);
 
-        const chartData = processWelcomeData(googleData, metaData, tvRadioData);
+        const chartData = processWelcomeData(googleData, metaData, tvRadioData, patientData);
 
         if (welcomeChart) {
             welcomeChart.updateOptions({
@@ -143,11 +146,11 @@ async function fetchAllTVRadioData() {
     // Stagger requests 5s apart to stay under the
     // Google Sheets 60 reads/minute quota ceiling.
     const wtla = await fetchStation('fetch_wtla_ads');
-    await sleep(3000);
+    await sleep(5000);
     const wkrl = await fetchStation('fetch_tvradio_ads');
-    await sleep(3000);
+    await sleep(5000);
     const wktw = await fetchStation('fetch_wktw_ads');
-   await sleep(3000);
+    await sleep(5000);
     const wzun = await fetchStation('fetch_wzun_ads');
 
     return {
@@ -156,6 +159,23 @@ async function fetchAllTVRadioData() {
         wktw: wktw.success ? wktw.data : null,
         wzun: wzun.success ? wzun.data : null,
     };
+}
+
+async function fetchNewPatientsData() {
+    const formData = new FormData();
+    formData.append('action', 'fetch_new_patients');
+    formData.append('nonce', dashboardConfig.nonce);
+
+    const response = await fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: formData });
+    const result   = await response.json();
+
+    if (result.success && result.data) {
+        console.log('✅ New Patient Leads received:', result.data.patients?.length, 'rows');
+        return result.data;
+    }
+
+    console.warn('⚠️ New Patient Leads fetch failed:', result);
+    return { patients: [] };
 }
 
 // ============================================================
@@ -224,6 +244,45 @@ function parseRadioDate(dateStr) {
     }
 }
 
+/**
+ * Parse a patient leads date string in M/D/YY or M/D/YYYY format.
+ * Returns a YYYY-MM-DD string or null on failure.
+ * Skips malformed entries (date ranges, missing year, etc.)
+ */
+function parsePatientDate(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+
+    // Skip known non-date values
+    const trimmed = dateStr.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'gap') return null;
+
+    // Must contain exactly two slashes — skips ranges like "12/23-1/3"
+    const slashCount = (trimmed.match(/\//g) || []).length;
+    if (slashCount !== 2) return null;
+
+    const parts = trimmed.split('/');
+    if (parts.length !== 3) return null;
+
+    const month = parseInt(parts[0]);
+    const day   = parseInt(parts[1]);
+    let   year  = parseInt(parts[2]);
+
+    if (isNaN(month) || isNaN(day) || isNaN(year)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    // Expand 2-digit years
+    if (year < 100) year = year >= 50 ? 1900 + year : 2000 + year;
+
+    // Sanity check: reject years outside plausible range (2020–2030)
+    if (year < 2020 || year > 2030) return null;
+
+    const yyyy = String(year);
+    const mm   = String(month).padStart(2, '0');
+    const dd   = String(day).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+}
+
 // ============================================================
 // DATA PROCESSING — AGGREGATION HELPERS
 // ============================================================
@@ -231,7 +290,6 @@ function parseRadioDate(dateStr) {
 /**
  * Aggregate a campaign's weeklyBreakdown into per-week totals,
  * returning a rounded array aligned to the provided labels array.
- * Uses week.week (YYYY-MM-DD) → weekDateToLabel() for label matching.
  */
 function aggregateCampaignToWeeks(campaign, labels) {
     const totals = new Array(labels.length).fill(0);
@@ -271,21 +329,14 @@ function aggregateCampaignRaw(campaign, labels) {
 
 /**
  * Main data processing function.
- * Builds:
- *   - 3 aggregate total series (Google, Meta, TV/Radio)
- *   - Per active-campaign series for Google and Meta (hidden by default)
- *   - One historical aggregate series each for Google and Meta (hidden by default)
- * Also populates the global campaignSeriesMeta array for toggle panel rendering.
+ * Builds all series for the overview chart.
  */
-function processWelcomeData(googleData, metaData, tvRadioData) {
-    console.log("=== processWelcomeData START ===");
-    console.log("googleData:", googleData);
-    console.log("googleData.campaigns:", googleData?.campaigns);
-    console.log("googleData.campaigns length:", googleData?.campaigns?.length);
-    console.log("metaData keys:", Object.keys(metaData || {}));
+function processWelcomeData(googleData, metaData, tvRadioData, patientData) {
+    console.log('📊 Processing welcome chart data...');
+
     const labels = generateWeeklyLabels(104);
-    console.log("First 3 weekly labels:", labels.slice(0, 3));
-    console.log("Last 3 weekly labels:", labels.slice(-3));
+    console.log('First 3 weekly labels:', labels.slice(0, 3));
+    console.log('Last 3 weekly labels:', labels.slice(-3));
 
     // Reset campaign series metadata
     campaignSeriesMeta = [];
@@ -327,7 +378,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
         });
         return {
             name: seriesName,
-            type: 'bar',
+            type: 'line',
             data,
             color: GOOGLE_MUTED
         };
@@ -354,8 +405,10 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     // META ADS
     // ----------------------------------------------------------------
     const metaCardCampaigns  = metaData.campaigns || [];
-    const metaChartCampaigns = (metaData.chartData && metaData.chartData.campaigns) ? metaData.chartData.campaigns : [];
-    const metaActiveIds      = new Set(metaCardCampaigns.map(c => c.id));
+    const metaChartCampaigns = (metaData.chartData && metaData.chartData.campaigns)
+        ? metaData.chartData.campaigns
+        : [];
+    const metaActiveIds = new Set(metaCardCampaigns.map(c => c.id));
 
     console.log(`🔵 Meta: ${metaChartCampaigns.length} chart campaigns, ${metaCardCampaigns.length} active card campaigns`);
 
@@ -382,7 +435,7 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
         });
         return {
             name: seriesName,
-            type: 'bar',
+            type: 'line',
             data,
             color: META_MUTED
         };
@@ -422,7 +475,6 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
                 const date = parseRadioDate(day.date);
                 if (!date) return;
 
-                // Build a YYYY-MM-DD string then snap to Monday via weekDateToLabel()
                 const yyyy = date.getFullYear();
                 const mm   = String(date.getMonth() + 1).padStart(2, '0');
                 const dd   = String(date.getDate()).padStart(2, '0');
@@ -435,63 +487,96 @@ function processWelcomeData(googleData, metaData, tvRadioData) {
     });
 
     // ----------------------------------------------------------------
+    // NEW PATIENT LEADS
+    // Each row from the sheet has a date (weekly or daily) and a count.
+    // All dates are snapped to their Monday via weekDateToLabel() and
+    // summed into the matching weekly bucket.
+    // Malformed dates (ranges, missing year, typos) are skipped silently.
+    // ----------------------------------------------------------------
+    const patientTotals = new Array(labels.length).fill(0);
+    const patientRows   = (patientData && patientData.patients) ? patientData.patients : [];
+    let   patientSkipped = 0;
+
+    patientRows.forEach(row => {
+        // row.date is already YYYY-MM-DD from the n8n Code node
+        const weekLabel = weekDateToLabel(row.date);
+        if (!weekLabel) {
+            patientSkipped++;
+            return;
+        }
+        const idx = labels.indexOf(weekLabel);
+        if (idx !== -1) patientTotals[idx] += row.newPatients || 0;
+    });
+
+    console.log(`🟠 Patient leads: ${patientRows.length} rows processed, ${patientSkipped} skipped, ${patientTotals.filter(v => v > 0).length} weeks with data`);
+
+    // ----------------------------------------------------------------
     // ROUND & LOG
     // ----------------------------------------------------------------
     const googleRounded = googleTotals.map(v => parseFloat(v.toFixed(2)));
     const metaRounded   = metaTotals.map(v => parseFloat(v.toFixed(2)));
 
-console.log('✅ Google weekly totals (non-zero weeks):', googleRounded.filter(v => v > 0).length, 'weeks with spend');
-console.log('✅ Google sample (last 5 weeks):', googleRounded.slice(-5));
-    console.log('✅ Meta weekly totals:', metaRounded);
-    console.log('✅ Radio weekly totals:', radioTotals);
+    console.log('✅ Google weekly totals (non-zero weeks):', googleRounded.filter(v => v > 0).length, 'weeks with spend');
+    console.log('✅ Google sample (last 5 weeks):', googleRounded.slice(-5));
+    console.log('✅ Meta weekly totals (non-zero):', metaRounded.filter(v => v > 0).length, 'weeks with spend');
+    console.log('✅ Radio weekly totals (non-zero):', radioTotals.filter(v => v > 0).length, 'weeks with ads');
     console.log('✅ Campaign series meta:', campaignSeriesMeta);
 
     // ----------------------------------------------------------------
     // BUILD SERIES ARRAY
-    // Order: totals first, then campaign detail (hidden), then radio line
+    // Order: totals first, then campaign detail (hidden), then radio, then patients
     // ----------------------------------------------------------------
     const series = [
+        // Total spend lines — thick, solid, with markers
         {
             name: 'Total Google Ads',
-            type: 'bar',
+            type: 'line',
             data: googleRounded,
             color: GOOGLE_COLOR
         },
         {
             name: 'Total Meta Ads',
-            type: 'bar',
+            type: 'line',
             data: metaRounded,
             color: META_COLOR
         },
 
-        // Google active campaigns (hidden by default)
+        // Google active campaigns (hidden by default) — thin dashed lines
         ...googleCampaignSeries,
 
-        // Google historical aggregate (hidden by default)
+        // Google historical aggregate (hidden by default) — thin dashed line
         ...(hasGoogleHistorical ? [{
             name: 'G: Inactive Campaigns',
-            type: 'bar',
+            type: 'line',
             data: googleHistoricalRounded,
             color: GOOGLE_MUTED
         }] : []),
 
-        // Meta active campaigns (hidden by default)
+        // Meta active campaigns (hidden by default) — thin dashed lines
         ...metaCampaignSeries,
 
-        // Meta historical aggregate (hidden by default)
+        // Meta historical aggregate (hidden by default) — thin dashed line
         ...(hasMetaHistorical ? [{
             name: 'M: Inactive Campaigns',
-            type: 'bar',
+            type: 'line',
             data: metaHistoricalRounded,
             color: META_MUTED
         }] : []),
 
-        // TV/Radio line
+        // TV/Radio line — thick, solid, with markers (unchanged)
         {
             name: 'Total TV / Radio Ads',
             type: 'line',
             data: radioTotals,
             color: RADIO_COLOR
+        },
+
+        // New Patient Leads — orange bar, third Y-axis
+        {
+            name: 'New Patient Leads',
+            type: 'bar',
+            data: patientTotals,
+            color: PATIENT_COLOR
         }
     ];
 
@@ -508,10 +593,37 @@ function createWelcomeChart(chartData) {
     const initialMin = allLabels[totalWeeks - 52]; // show last 52 weeks by default
     const initialMax = allLabels[totalWeeks - 1];
 
-    const strokeWidths = chartData.series.map(s => s.type === 'line' ? 3 : 0);
-    const fillOpacity  = chartData.series.map(s => s.type === 'line' ? 1 : 0.9);
+    // Per-series stroke widths:
+    //   Total ad spend lines + TV/Radio = 3 (thick)
+    //   Individual/inactive campaign lines = 1.5 (thin)
+    //   New Patient Leads bar = 0 (bars have no stroke)
+    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+    const strokeWidths = chartData.series.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 3;
+        return 1.5;
+    });
 
-    const yaxis = chartData.series.map((s, i) => {
+    // dashArray: 0 = solid (totals + TV/Radio), 5 = dashed (individual/inactive campaigns)
+    const dashArray = chartData.series.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 0;
+        return 5;
+    });
+
+    // markers: totals + TV/Radio get size 4, campaigns get 0, bars get 0
+    const markerSizes = chartData.series.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 4;
+        return 0;
+    });
+
+    const fillOpacity = chartData.series.map(s => {
+        if (s.type === 'bar') return 0.85;
+        return 1;
+    });
+
+    const yaxis = chartData.series.map(s => {
         if (s.name === 'Total Google Ads') {
             return {
                 seriesName: 'Total Google Ads',
@@ -531,6 +643,17 @@ function createWelcomeChart(chartData) {
                     style: { fontSize: '16px', fontWeight: 600, color: RADIO_COLOR }
                 },
                 labels: { formatter: val => Math.round(val) + ' ads' }
+            };
+        }
+        if (s.name === 'New Patient Leads') {
+            return {
+                seriesName: 'New Patient Leads',
+                opposite: true,
+                title: {
+                    text: 'New Patient Leads',
+                    style: { fontSize: '16px', fontWeight: 600, color: PATIENT_COLOR }
+                },
+                labels: { formatter: val => Math.round(val) + ' leads' }
             };
         }
         // All other series share the left spend axis (hidden)
@@ -579,25 +702,22 @@ function createWelcomeChart(chartData) {
             }
         },
         colors: chartData.series.map(s => s.color),
-        dataLabels: {
-            enabled: false
-        },
+        dataLabels: { enabled: false },
         stroke: {
             width: strokeWidths,
             curve: 'smooth',
-            colors: chartData.series.map(s => s.type === 'bar' ? '#ffffff' : 'transparent'),
-            dashArray: 0,
-            lineCap: 'butt'
+            dashArray: dashArray,
+            lineCap: 'round'
         },
         plotOptions: {
             bar: {
-                columnWidth: '80%', // wider columns since weekly bars are narrower
-                borderRadius: 0
+                columnWidth: '60%',
+                borderRadius: 2
             }
         },
         fill: { opacity: fillOpacity },
         markers: {
-            size: chartData.series.map(s => s.type === 'line' ? 4 : 0),
+            size: markerSizes,
             strokeWidth: 2,
             hover: { size: 6 }
         },
@@ -637,23 +757,30 @@ function createWelcomeChart(chartData) {
                     if (val === undefined || val === null) return undefined;
                     const name = opts.w.config.series[opts.seriesIndex].name;
                     if (name === 'Total TV / Radio Ads') return Math.round(val) + ' ads played';
+                    if (name === 'New Patient Leads') return Math.round(val) + ' leads';
                     return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 }
             }
         },
-        legend: {
-            show: false
-        },
+        legend: { show: false },
         title: {
             text: 'Paid Ad Campaign Performance Overview',
             align: 'center',
             style: { fontSize: '20px', fontWeight: 600 }
         },
         subtitle: {
-            text: 'Showing last 52 weeks — pan left to view prior history',
-            align: 'center',
-            style: { fontSize: '12px', color: '#999' }
-        },
+    	text: (() => {
+        	const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        	const yesterday = new Date();
+        	yesterday.setDate(yesterday.getDate() - 1);
+        	const weekStart = new Date(yesterday);
+        	weekStart.setDate(yesterday.getDate() - 364); // 52 weeks back
+        	const fmt = d => `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+        	return `Showing ${fmt(weekStart)} – ${fmt(yesterday)} — pan left to view prior history`;
+    	})(),
+    	align: 'center',
+    	style: { fontSize: '12px', color: '#999' }
+		},
         noData: {
             text: 'Loading data...',
             align: 'center',
@@ -852,25 +979,27 @@ function renderCampaignTogglePanel() {
  */
 function renderTotalsToggleGroup() {
     const totals = [
-        { seriesName: 'Total Google Ads',    label: 'Total Google Ads',    color: GOOGLE_COLOR },
-        { seriesName: 'Total Meta Ads',       label: 'Total Meta Ads',       color: META_COLOR   },
-        { seriesName: 'Total TV / Radio Ads', label: 'Total TV / Radio Ads', color: RADIO_COLOR  }
+        { seriesName: 'Total Google Ads',    label: 'Total Google Ads',    color: GOOGLE_COLOR  },
+        { seriesName: 'Total Meta Ads',       label: 'Total Meta Ads',       color: META_COLOR    },
+        { seriesName: 'Total TV / Radio Ads', label: 'Total TV / Radio Ads', color: RADIO_COLOR   },
+        { seriesName: 'New Patient Leads',    label: 'New Patient Leads',    color: PATIENT_COLOR }
     ];
 
-    const buttons = totals.map(t => {
-        campaignVisibility[t.seriesName] = true; // init as visible
-        return `
-            <button
-                class="toggle-btn toggle-btn--active"
-                data-series="${escapeAttr(t.seriesName)}"
-                onclick="toggleCampaignSeries('${escapeAttr(t.seriesName)}', this)"
-                title="${escapeAttr(t.label)}"
-            >
-                <span class="toggle-btn__dot" style="background:${t.color}"></span>
-                ${t.label}
-            </button>
-        `;
-    }).join('');
+   const buttons = totals.map(t => {
+    campaignVisibility[t.seriesName] = true;
+    const extraClass = t.seriesName === 'New Patient Leads' ? ' toggle-btn--patients' : '';
+    return `
+        <button
+            class="toggle-btn toggle-btn--active${extraClass}"
+            data-series="${escapeAttr(t.seriesName)}"
+            onclick="toggleCampaignSeries('${escapeAttr(t.seriesName)}', this)"
+            title="${escapeAttr(t.label)}"
+        >
+            <span class="toggle-btn__dot" style="background:${t.color}"></span>
+            ${t.label}
+        </button>
+    `;
+}).join('');
 
     return `
         <div class="toggle-group toggle-group--totals">
