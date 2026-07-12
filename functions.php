@@ -109,6 +109,23 @@ add_action('wp_enqueue_scripts', 'enqueue_dashboard_chart_script');
 
 
 /**
+ * Enqueue Attribution Panel JS
+ */
+function enqueue_attribution_panel_script() {
+    if (!is_page('dashboard')) return;
+
+    wp_enqueue_script(
+        'attribution-panel',
+        get_stylesheet_directory_uri() . '/js/attribution-panel.js',
+        array('jquery', 'apexcharts', 'ad-dashboard-script'),
+        '1.0.0',
+        true
+    );
+}
+add_action('wp_enqueue_scripts', 'enqueue_attribution_panel_script');
+
+
+/**
  * AJAX endpoint for fetching WKRL data from n8n
  */
 function fetch_tvradio_ads_data() {
