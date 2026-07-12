@@ -107,7 +107,8 @@ function navigateToSlide(target) {
         tvradio: document.querySelector('.tvradio-row'),
         albany: document.querySelector('.albany-row'),
         montreal: document.querySelector('.montreal-row'),
-        syracuse: document.querySelector('.syracuse-row')
+        syracuse: document.querySelector('.syracuse-row'),
+		attribution: document.querySelector('.attribution-row')
     };
 
     const currentRow = rows[currentSlide];
@@ -1061,6 +1062,12 @@ function loadCampaignAdSets(campaignId, days) {
 // transient failures automatically.
 // ============================================================
 window.addEventListener('load', function () {
+
+// Hide attribution row on initial load
+    const attributionRow = document.querySelector('.attribution-row');
+    if (attributionRow) attributionRow.style.display = 'none';
+
+	
     setTimeout(() => {
         loadGoogleAdsData();
         loadFacebookAdsData();
