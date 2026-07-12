@@ -880,6 +880,68 @@ function fetch_new_patients_callback() {
     wp_send_json_success($data);
 }
 
+/**
+ * AJAX endpoint for Commercial Attribution (GA4 + Radio air times)
+ */
+function fetch_commercial_attribution() {
+    check_ajax_referer('dashboard_nonce', 'nonce');
+
+    $date    = isset($_POST['date'])    ? sanitize_text_field($_POST['date'])    : '';
+    $station = isset($_POST['station']) ? sanitize_text_field($_POST['station']) : '';
+
+    if (empty($date) || empty($station)) {
+        wp_send_json_error(array(
+            'message' => 'Date and station are required',
+            'type'    => 'missing_params'
+        ));
+        return;
+    }
+
+    $webhook_url = add_query_arg(array(
+        'date'    => $date,
+        'station' => $station
+    ), 'https://automation.magnawebservices.com/webhook/ga4-attribution');
+
+    $response = wp_remote_get($webhook_url, array(
+        'timeout'   => 30,
+        'sslverify' => true,
+        'headers'   => array('Accept' => 'application/json')
+    ));
+
+    if (is_wp_error($response)) {
+        wp_send_json_error(array(
+            'message' => 'Network error: ' . $response->get_error_message(),
+            'type'    => 'network_error'
+        ));
+        return;
+    }
+
+    $response_code = wp_remote_retrieve_response_code($response);
+    if ($response_code !== 200) {
+        wp_send_json_error(array(
+            'message' => 'HTTP error',
+            'code'    => $response_code,
+            'type'    => 'http_error'
+        ));
+        return;
+    }
+
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        wp_send_json_error(array(
+            'message' => 'JSON error: ' . json_last_error_msg(),
+            'type'    => 'json_error'
+        ));
+        return;
+    }
+
+    wp_send_json_success($data);
+}
+add_action('wp_ajax_fetch_commercial_attribution',        'fetch_commercial_attribution');
+add_action('wp_ajax_nopriv_fetch_commercial_attribution', 'fetch_commercial_attribution');
+
 
 /**
  * Future endpoints for Google and Facebook ads
