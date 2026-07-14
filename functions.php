@@ -920,7 +920,7 @@ function fetch_commercial_attribution() {
     ), 'https://automation.magnawebservices.com/webhook/ga4-attribution');
 
     $response = wp_remote_get($webhook_url, array(
-        'timeout'   => 30,
+        'timeout'   => 60,
         'sslverify' => true,
         'headers'   => array('Accept' => 'application/json')
     ));
