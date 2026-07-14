@@ -79,21 +79,21 @@ function renderAttributionData(data, station, date) {
     }
 
     window.attributionChartInstance = new ApexCharts(
-        document.getElementById('attributionChart'),
-        {
-            chart:  { type: 'line', height: 220, toolbar: { show: false }, zoom: { enabled: false } },
-            series: [{ name: 'Sessions', data: sessions }],
-            xaxis:  { categories: hours, labels: { style: { fontSize: '11px' } } },
-            yaxis:  { labels: { style: { fontSize: '11px' } } },
-            stroke: { curve: 'smooth', width: 2 },
-            colors: ['#2a78d6'],
-            fill:   { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.15, opacityTo: 0.02 } },
-            markers: { size: 3 },
-            annotations: { xaxis: annotations },
-            grid:   { borderColor: '#f0f0f0' },
-            tooltip: { y: { formatter: val => val + ' sessions' } }
-        }
-    );
+    document.getElementById('attributionChart'),
+    {
+        chart: { type: 'area', height: 220, toolbar: { show: false }, zoom: { enabled: false } },
+        series: [{ name: 'Sessions', data: sessions }],
+        xaxis: { categories: hours, labels: { style: { fontSize: '11px' } } },
+        yaxis: { labels: { style: { fontSize: '11px' } } },
+        stroke: { curve: 'smooth', width: 2 },
+        colors: ['#2a78d6'],
+        fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0.02, stops: [0, 100] } },
+        markers: { size: 3 },
+        annotations: { xaxis: annotations },
+        grid: { borderColor: '#f0f0f0' },
+        tooltip: { y: { formatter: val => val + ' sessions' } }
+    }
+);
     window.attributionChartInstance.render();
 
     document.getElementById('attributionTableTitle').textContent =
