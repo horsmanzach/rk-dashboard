@@ -935,28 +935,63 @@ let hiddenSeriesStore = {};
 function toggleCampaignSeries(seriesName, btn) {
     const isVisible = campaignVisibility[seriesName] || false;
 
-    if (isVisible) {
-        // Remove series from chart entirely
-        const currentSeries = welcomeChart.w.config.series;
-        const updated = currentSeries.filter(s => s.name !== seriesName);
-        // Store it for later re-addition
-        const removed = currentSeries.find(s => s.name === seriesName);
-        if (removed) hiddenSeriesStore[seriesName] = removed;
-        welcomeChart.updateSeries(updated, false);
-        campaignVisibility[seriesName] = false;
-        btn.classList.remove('toggle-btn--active');
-        btn.classList.add('toggle-btn--inactive');
-    } else {
-        // Add series back to chart
-        const seriesData = hiddenSeriesStore[seriesName];
-        if (seriesData) {
-            const currentSeries = welcomeChart.w.config.series;
-            welcomeChart.updateSeries([...currentSeries, seriesData], false);
-        }
-        campaignVisibility[seriesName] = true;
-        btn.classList.remove('toggle-btn--inactive');
-        btn.classList.add('toggle-btn--active');
+    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+
+    function buildYaxis(seriesArray) {
+        return seriesArray.map(s => {
+            if (s.name === 'Total Google Ads') {
+                return {
+                    seriesName: 'Total Google Ads',
+                    title: { text: 'Ad Spend ($)', style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' } },
+                    labels: { formatter: val => '$' + Math.round(val).toLocaleString() }
+                };
+            }
+            if (s.name === 'Total TV / Radio Ads') {
+                return {
+                    seriesName: 'Total TV / Radio Ads',
+                    opposite: true,
+                    title: { text: 'TV / Radio Ads Played', style: { fontSize: '16px', fontWeight: 600, color: '#ff6b6b' } },
+                    labels: { formatter: val => Math.round(val) + ' ads' }
+                };
+            }
+            if (s.name === 'New Patient Leads') {
+                return {
+                    seriesName: 'New Patient Leads',
+                    opposite: true,
+                    title: { text: 'New Patient Leads', style: { fontSize: '16px', fontWeight: 600, color: '#c9a84c' } },
+                    labels: { formatter: val => Math.round(val) + ' leads' }
+                };
+            }
+            return { seriesName: 'Total Google Ads', show: false };
+        });
     }
+
+    if (isVisible) {
+    const currentSeries = welcomeChart.w.config.series;
+    const updated = currentSeries.filter(s => s.name !== seriesName);
+    const removed = currentSeries.find(s => s.name === seriesName);
+    if (removed) hiddenSeriesStore[seriesName] = removed;
+    welcomeChart.updateOptions({ series: updated, yaxis: buildYaxis(updated) }, false, false);
+    campaignVisibility[seriesName] = false;
+    btn.classList.remove('toggle-btn--active');
+    btn.classList.add('toggle-btn--inactive');
+    requestAnimationFrame(() => { 
+    welcomeChart.zoomX(chartNav.min, chartNav.max); 
+});
+} else {
+    const seriesData = hiddenSeriesStore[seriesName];
+    if (seriesData) {
+        const currentSeries = welcomeChart.w.config.series;
+        const newSeries = [...currentSeries, seriesData];
+        welcomeChart.updateOptions({ series: newSeries, yaxis: buildYaxis(newSeries) }, false, false);
+    }
+    campaignVisibility[seriesName] = true;
+    btn.classList.remove('toggle-btn--inactive');
+    btn.classList.add('toggle-btn--active');
+    requestAnimationFrame(() => { 
+    welcomeChart.zoomX(chartNav.min, chartNav.max); 
+});
+}
 }
 
 /**
