@@ -143,14 +143,15 @@ async function fetchAllTVRadioData() {
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    // Stagger requests 5s apart to stay under the
-    // Google Sheets 60 reads/minute quota ceiling.
+    // 500ms stagger - frontend reads from Wordpress cache (not Google Sheets directly)
+    // Kept as a light fallback buffer for cache miss scenarios
+	
     const wtla = await fetchStation('fetch_wtla_ads');
-    await sleep(5000);
+    await sleep(500);
     const wkrl = await fetchStation('fetch_tvradio_ads');
-    await sleep(5000);
+    await sleep(500);
     const wktw = await fetchStation('fetch_wktw_ads');
-    await sleep(5000);
+    await sleep(500);
     const wzun = await fetchStation('fetch_wzun_ads');
 
     return {
