@@ -64,7 +64,7 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.1.5', // Increment version to bust cache
+        '1.1.7', // Increment version to bust cache
         true
     );
     
@@ -95,7 +95,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.3.3', // Increment to bust cache
+        '1.3.5', // Increment to bust cache
         true
     );
     
@@ -118,11 +118,115 @@ function enqueue_attribution_panel_script() {
         'attribution-panel',
         get_stylesheet_directory_uri() . '/js/attribution-panel.js',
         array('jquery', 'apexcharts', 'ad-dashboard-script'),
-        '1.0.0',
+        '1.0.1',
         true
     );
 }
 add_action('wp_enqueue_scripts', 'enqueue_attribution_panel_script');
+
+// =============================================================================
+// SERVER-SIDE CACHE — Write Endpoint (called by n8n nightly workflow)
+// =============================================================================
+
+/**
+ * Allowed cache keys and their human-readable labels.
+ * Used for validation and status reporting.
+ */
+function rk_cache_allowed_keys() {
+    return array(
+        'rk_cache_google_ads',
+        'rk_cache_meta_ads',
+        'rk_cache_wtla',
+        'rk_cache_wkrl',
+        'rk_cache_wktw',
+        'rk_cache_wzun',
+        'rk_cache_new_patients',
+    );
+}
+
+/**
+ * n8n calls this via HTTP POST to write a data payload into a WordPress transient.
+ *
+ * Required POST fields:
+ *   cache_key  — one of the allowed keys above
+ *   payload    — JSON-encoded data string (the raw response from the source webhook)
+ *   secret     — must match RK_CACHE_SECRET constant defined below
+ *
+ * Authentication: shared secret token (not a nonce — n8n is not a browser session).
+ * Define this constant in wp-config.php:
+ *   define( 'RK_CACHE_SECRET', 'your-long-random-secret-here' );
+ */
+add_action( 'wp_ajax_nopriv_rk_set_dashboard_cache', 'rk_set_dashboard_cache' );
+add_action( 'wp_ajax_rk_set_dashboard_cache',        'rk_set_dashboard_cache' );
+
+function rk_set_dashboard_cache() {
+
+    // 1. Authenticate via shared secret
+    $secret = isset( $_POST['secret'] ) ? sanitize_text_field( $_POST['secret'] ) : '';
+    if ( ! defined( 'RK_CACHE_SECRET' ) || ! hash_equals( RK_CACHE_SECRET, $secret ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized' ), 401 );
+        return;
+    }
+
+    // 2. Validate cache_key
+    $cache_key = isset( $_POST['cache_key'] ) ? sanitize_text_field( $_POST['cache_key'] ) : '';
+    if ( ! in_array( $cache_key, rk_cache_allowed_keys(), true ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid cache_key: ' . $cache_key ) );
+        return;
+    }
+
+    // 3. Decode and validate payload
+    $payload_raw = isset( $_POST['payload'] ) ? wp_unslash( $_POST['payload'] ) : '';
+    $payload     = json_decode( $payload_raw, true );
+    if ( json_last_error() !== JSON_ERROR_NONE || empty( $payload ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid or empty payload JSON: ' . json_last_error_msg() ) );
+        return;
+    }
+
+    // 4. Store transient — 25 hours (gives nightly job a 1hr buffer before stale)
+    $expiry = 25 * HOUR_IN_SECONDS;
+    $stored = set_transient( $cache_key, $payload, $expiry );
+
+    // 5. Record timestamp separately so the UI can show "Last updated"
+    set_transient( $cache_key . '_cached_at', current_time( 'mysql' ), $expiry );
+
+    if ( $stored ) {
+        wp_send_json_success( array(
+            'message'   => 'Cache set: ' . $cache_key,
+            'cached_at' => current_time( 'mysql' ),
+        ) );
+    } else {
+        wp_send_json_error( array( 'message' => 'set_transient failed for: ' . $cache_key ) );
+    }
+}
+
+
+// =============================================================================
+// SERVER-SIDE CACHE — Status Endpoint (called by dashboard frontend)
+// =============================================================================
+
+/**
+ * Returns cached_at timestamps for all 7 sources.
+ * Used by the dashboard UI to display "Data last refreshed: [date]".
+ * Does NOT return the data payloads themselves.
+ */
+add_action( 'wp_ajax_rk_get_cache_status',        'rk_get_cache_status' );
+add_action( 'wp_ajax_nopriv_rk_get_cache_status', 'rk_get_cache_status' );
+
+function rk_get_cache_status() {
+    check_ajax_referer( 'dashboard_nonce', 'nonce' );
+
+    $status = array();
+    foreach ( rk_cache_allowed_keys() as $key ) {
+        $cached_at        = get_transient( $key . '_cached_at' );
+        $status[ $key ]   = array(
+            'cached'    => ( $cached_at !== false ),
+            'cached_at' => $cached_at ? $cached_at : null,
+        );
+    }
+
+    wp_send_json_success( $status );
+}
 
 
 /**
@@ -130,6 +234,31 @@ add_action('wp_enqueue_scripts', 'enqueue_attribution_panel_script');
  */
 function fetch_tvradio_ads_data() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_wkrl' );
+	if ( $cached !== false ) {
+    $ordersArray = array_values( $cached['orders'] );
+    $totalAds = 0; $earliestDate = null; $latestDate = null;
+    foreach ( $ordersArray as $order ) {
+        $totalAds += $order['totalAds'];
+        $startTimestamp = strtotime( $order['dateRange']['start'] );
+        $endTimestamp   = strtotime( $order['dateRange']['end'] );
+        if ( !$earliestDate || $startTimestamp < strtotime( $earliestDate ) ) $earliestDate = $order['dateRange']['start'];
+        if ( !$latestDate   || $endTimestamp   > strtotime( $latestDate ) )   $latestDate   = $order['dateRange']['end'];
+    }
+    wp_send_json_success( array(
+        'orders'  => $ordersArray,
+        'summary' => array(
+            'totalAds'   => $totalAds,
+            'orderCount' => count( $ordersArray ),
+            'dateRange'  => array( 'start' => $earliestDate, 'end' => $latestDate )
+        )
+    ) );
+    return;
+}
+	
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/wkrl-data', array(
         'timeout' => 30,
@@ -241,6 +370,30 @@ add_action('wp_ajax_nopriv_fetch_tvradio_ads', 'fetch_tvradio_ads_data');
  */
 function fetch_wtla_ads_data() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_wtla' );
+if ( $cached !== false ) {
+    $ordersArray = array_values( $cached['orders'] );
+    $totalAds = 0; $earliestDate = null; $latestDate = null;
+    foreach ( $ordersArray as $order ) {
+        $totalAds += $order['totalAds'];
+        $startTimestamp = strtotime( $order['dateRange']['start'] );
+        $endTimestamp   = strtotime( $order['dateRange']['end'] );
+        if ( !$earliestDate || $startTimestamp < strtotime( $earliestDate ) ) $earliestDate = $order['dateRange']['start'];
+        if ( !$latestDate   || $endTimestamp   > strtotime( $latestDate ) )   $latestDate   = $order['dateRange']['end'];
+    }
+    wp_send_json_success( array(
+        'orders'  => $ordersArray,
+        'summary' => array(
+            'totalAds'   => $totalAds,
+            'orderCount' => count( $ordersArray ),
+            'dateRange'  => array( 'start' => $earliestDate, 'end' => $latestDate )
+        )
+    ) );
+    return;
+}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/wtla-data', array(
         'timeout' => 30,
@@ -346,6 +499,30 @@ add_action('wp_ajax_nopriv_fetch_wtla_ads', 'fetch_wtla_ads_data');
  */
 function fetch_wktw_ads_data() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_wktw' );
+if ( $cached !== false ) {
+    $ordersArray = array_values( $cached['orders'] );
+    $totalAds = 0; $earliestDate = null; $latestDate = null;
+    foreach ( $ordersArray as $order ) {
+        $totalAds += $order['totalAds'];
+        $startTimestamp = strtotime( $order['dateRange']['start'] );
+        $endTimestamp   = strtotime( $order['dateRange']['end'] );
+        if ( !$earliestDate || $startTimestamp < strtotime( $earliestDate ) ) $earliestDate = $order['dateRange']['start'];
+        if ( !$latestDate   || $endTimestamp   > strtotime( $latestDate ) )   $latestDate   = $order['dateRange']['end'];
+    }
+    wp_send_json_success( array(
+        'orders'  => $ordersArray,
+        'summary' => array(
+            'totalAds'   => $totalAds,
+            'orderCount' => count( $ordersArray ),
+            'dateRange'  => array( 'start' => $earliestDate, 'end' => $latestDate )
+        )
+    ) );
+    return;
+}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/wktw-data', array(
         'timeout' => 30,
@@ -453,6 +630,30 @@ add_action('wp_ajax_nopriv_fetch_wktw_ads', 'fetch_wktw_ads_data');
  */
 function fetch_wzun_ads_data() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_wzun' );
+if ( $cached !== false ) {
+    $ordersArray = array_values( $cached['orders'] );
+    $totalAds = 0; $earliestDate = null; $latestDate = null;
+    foreach ( $ordersArray as $order ) {
+        $totalAds += $order['totalAds'];
+        $startTimestamp = strtotime( $order['dateRange']['start'] );
+        $endTimestamp   = strtotime( $order['dateRange']['end'] );
+        if ( !$earliestDate || $startTimestamp < strtotime( $earliestDate ) ) $earliestDate = $order['dateRange']['start'];
+        if ( !$latestDate   || $endTimestamp   > strtotime( $latestDate ) )   $latestDate   = $order['dateRange']['end'];
+    }
+    wp_send_json_success( array(
+        'orders'  => $ordersArray,
+        'summary' => array(
+            'totalAds'   => $totalAds,
+            'orderCount' => count( $ordersArray ),
+            'dateRange'  => array( 'start' => $earliestDate, 'end' => $latestDate )
+        )
+    ) );
+    return;
+}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/wzun-data', array(
         'timeout' => 30,
@@ -559,6 +760,14 @@ add_action('wp_ajax_nopriv_fetch_wzun_ads', 'fetch_wzun_ads_data');
  */
 function fetch_google_ads_campaigns() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_google_ads' ); // ← key changes per handler
+	if ( $cached !== false ) {
+    	wp_send_json_success( $cached );
+    	return;
+	}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/google-ads-campaigns', array(
         'timeout' => 30,
@@ -686,6 +895,14 @@ add_action('wp_ajax_nopriv_fetch_google_campaign_metrics', 'fetch_google_campaig
 
 function fetch_facebook_ads_data() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_meta_ads' ); // ← key changes per handler
+	if ( $cached !== false ) {
+    	wp_send_json_success( $cached );
+    	return;
+	}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/facebook-ads-data', array(
         'timeout' => 30,
@@ -810,6 +1027,14 @@ add_action('wp_ajax_nopriv_fetch_facebook_campaign_adsets', 'fetch_facebook_camp
  */
 function fetch_google_ads_summary() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_google_ads' ); // ← key changes per handler
+	if ( $cached !== false ) {
+    	wp_send_json_success( $cached );
+    	return;
+	}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/google-ads-campaigns', array(
         'timeout' => 30,
@@ -840,6 +1065,14 @@ add_action('wp_ajax_nopriv_fetch_google_ads_summary', 'fetch_google_ads_summary'
  */
 function fetch_facebook_ads_summary() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_meta_ads' ); // ← key changes per handler
+	if ( $cached !== false ) {
+    	wp_send_json_success( $cached );
+    	return;
+	}
+	// Cache miss — fall through to live n8n call
     
     $response = wp_remote_get('https://automation.magnawebservices.com/webhook/facebook-ads-data', array(
         'timeout' => 30,
@@ -872,6 +1105,14 @@ add_action('wp_ajax_nopriv_fetch_new_patients', 'fetch_new_patients_callback');
 
 function fetch_new_patients_callback() {
     check_ajax_referer('dashboard_nonce', 'nonce');
+
+	// Serve from cache if available
+	$cached = get_transient( 'rk_cache_new_patients' ); // ← key changes per handler
+	if ( $cached !== false ) {
+    	wp_send_json_success( $cached );
+    	return;
+	}
+	// Cache miss — fall through to live n8n call
 
     $webhook_url = 'https://automation.magnawebservices.com/webhook/new-patients';
 
