@@ -1,9 +1,46 @@
+function updateAttributionAvailability() {
+    const el = document.getElementById('attributionStationAvailability');
+    if (!el) return;
+
+	console.log('🔍 Attribution availability check:', JSON.stringify({
+    wtla: syracuseStationData?.wtla?.summary?.dateRange,
+    wkrl: syracuseStationData?.wkrl?.summary?.dateRange,
+    wktw: syracuseStationData?.wktw?.summary?.dateRange,
+    wzun: syracuseStationData?.wzun?.summary?.dateRange
+}));
+	
+    const stationLabels = {
+        wtla: 'WTLA',
+        wkrl: 'WKRL',
+        wktw: 'WKTW',
+        wzun: 'WZUN'
+    };
+
+    const lines = [];
+
+    Object.entries(stationLabels).forEach(([key, label]) => {
+        const stationData = syracuseStationData?.[key];
+        const range = stationData?.summary?.dateRange;
+
+        if (range?.start && range?.end) {
+            const start = formatDate(range.start);
+            const end   = formatDate(range.end);
+            lines.push(`<span class="attribution-availability-item"><strong>${label}:</strong> ${start} – ${end}</span>`);
+        } else {
+            lines.push(`<span class="attribution-availability-item attribution-availability-loading"><strong>${label}:</strong> Loading…</span>`);
+        }
+    });
+
+    el.innerHTML = lines.join('');
+}
+
 function showAttributionPanel() {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().split('T')[0];
     document.getElementById('attributionDate').value = dateStr;
     navigateToSlide('attribution');
+	updateAttributionAvailability();
 }
 
 function loadAttributionData() {
