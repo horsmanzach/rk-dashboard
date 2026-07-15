@@ -996,9 +996,7 @@ let hiddenSeriesStore = {};
 
 function toggleCampaignSeries(seriesName, btn) {
     const isVisible = campaignVisibility[seriesName] || false;
-
     const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
-
     function buildYaxis(seriesArray) {
         return seriesArray.map(s => {
             if (s.name === 'Total Google Ads') {
@@ -1027,33 +1025,64 @@ function toggleCampaignSeries(seriesName, btn) {
             return { seriesName: 'Total Google Ads', show: false };
         });
     }
-
     if (isVisible) {
-    const currentSeries = welcomeChart.w.config.series;
-    const updated = currentSeries.filter(s => s.name !== seriesName);
-    const removed = currentSeries.find(s => s.name === seriesName);
-    if (removed) hiddenSeriesStore[seriesName] = removed;
-    welcomeChart.updateOptions({ series: updated, yaxis: buildYaxis(updated) }, false, false);
-    campaignVisibility[seriesName] = false;
-    btn.classList.remove('toggle-btn--active');
-    btn.classList.add('toggle-btn--inactive');
-    requestAnimationFrame(() => { 
-    welcomeChart.zoomX(chartNav.min, chartNav.max); 
-});
-} else {
-    const seriesData = hiddenSeriesStore[seriesName];
-    if (seriesData) {
         const currentSeries = welcomeChart.w.config.series;
-        const newSeries = [...currentSeries, seriesData];
-        welcomeChart.updateOptions({ series: newSeries, yaxis: buildYaxis(newSeries) }, false, false);
+        const updated = currentSeries.filter(s => s.name !== seriesName);
+        const removed = currentSeries.find(s => s.name === seriesName);
+        if (removed) hiddenSeriesStore[seriesName] = removed;
+        welcomeChart.updateOptions({ series: updated, yaxis: buildYaxis(updated) }, false, false);
+        campaignVisibility[seriesName] = false;
+        btn.classList.remove('toggle-btn--active');
+        btn.classList.add('toggle-btn--inactive');
+        requestAnimationFrame(() => {
+            welcomeChart.zoomX(chartNav.min, chartNav.max);
+        });
+    } else {
+        const seriesData = hiddenSeriesStore[seriesName];
+        if (seriesData) {
+            const currentSeries = welcomeChart.w.config.series;
+            const newSeries = [...currentSeries, seriesData];
+            welcomeChart.updateOptions({ series: newSeries, yaxis: buildYaxis(newSeries) }, false, false);
+        }
+        campaignVisibility[seriesName] = true;
+        btn.classList.remove('toggle-btn--inactive');
+        btn.classList.add('toggle-btn--active');
+        requestAnimationFrame(() => {
+            welcomeChart.zoomX(chartNav.min, chartNav.max);
+        });
     }
-    campaignVisibility[seriesName] = true;
-    btn.classList.remove('toggle-btn--inactive');
-    btn.classList.add('toggle-btn--active');
-    requestAnimationFrame(() => { 
-    welcomeChart.zoomX(chartNav.min, chartNav.max); 
-});
+
+    // Update Clear All button visibility for this platform
+    const meta = campaignSeriesMeta.find(c => c.seriesName === seriesName);
+    if (meta) updateClearAllButton(meta.platform);
 }
+
+function updateClearAllButton(platform) {
+    const btn = document.getElementById(`clearAll-${platform}`);
+    if (!btn) return;
+
+    // Find all series names belonging to this platform
+    const platformSeries = campaignSeriesMeta
+        .filter(c => c.platform === platform)
+        .map(c => c.seriesName);
+
+    const anyActive = platformSeries.some(sn => campaignVisibility[sn] === true);
+    btn.style.display = anyActive ? 'inline-flex' : 'none';
+}
+
+function clearAllCampaigns(platform) {
+    const platformSeries = campaignSeriesMeta
+        .filter(c => c.platform === platform)
+        .map(c => c.seriesName);
+
+    platformSeries.forEach(sn => {
+        if (campaignVisibility[sn] === true) {
+            // Find the button for this series and simulate a toggle-off
+            const btn = document.querySelector(`[data-series="${CSS.escape(sn)}"]`);
+            if (btn) toggleCampaignSeries(sn, btn);
+        }
+    });
+    // Button will auto-hide via the updateClearAllButton calls inside toggleCampaignSeries
 }
 
 /**
@@ -1140,16 +1169,22 @@ function renderToggleGroup(title, campaigns, platform) {
     }).join('');
 
     return `
-        <div class="toggle-group">
-            <div class="toggle-group__header">
-                <span class="toggle-group__dot" style="background:${dotColor}"></span>
-                <span class="toggle-group__title">${title}</span>
-            </div>
-            <div class="toggle-group__buttons">
-                ${buttons}
-            </div>
+    <div class="toggle-group" data-platform="${platform}">
+        <div class="toggle-group__header">
+            <span class="toggle-group__dot" style="background:${dotColor}"></span>
+            <span class="toggle-group__title">${title}</span>
+            <button
+                class="toggle-clear-btn"
+                id="clearAll-${platform}"
+                style="display:none;"
+                onclick="clearAllCampaigns('${platform}')"
+            >Clear All</button>
         </div>
-    `;
+        <div class="toggle-group__buttons">
+            ${buttons}
+        </div>
+    </div>
+`;
 }
 
 function escapeAttr(str) {
