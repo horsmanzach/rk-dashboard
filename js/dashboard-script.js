@@ -408,13 +408,11 @@ function renderOrderSections(data, containerId, summaryIds) {
 
 async function loadWTLAData() {
     console.log('🔵 loadWTLAData called!');
-
     const result = await fetchWithRetry(
         'fetch_wtla_ads',
         dashboardConfig.nonce,
         dashboardConfig.ajaxUrl
     );
-
     if (result) {
         const data = result.data;
         console.log('✅ WTLA Full Response:', result);
@@ -425,6 +423,7 @@ async function loadWTLAData() {
             totalAdsId: 'wtlaTotalAds',
             dateRangeId: 'wtlaDateRange'
         });
+        if (typeof updateAttributionAvailability === 'function') updateAttributionAvailability();
     } else {
         console.error('❌ WTLA failed to load after all retries.');
     }
@@ -449,6 +448,7 @@ async function loadWKRLData() {
             totalAdsId: 'wkrlTotalAds',
             dateRangeId: 'wkrlDateRange'
         });
+		if (typeof updateAttributionAvailability === 'function') updateAttributionAvailability();
     } else {
         console.error('❌ WKRL failed to load after all retries.');
     }
@@ -473,6 +473,7 @@ async function loadWKTWData() {
             totalAdsId: 'wktwTotalAds',
             dateRangeId: 'wktwDateRange'
         });
+		if (typeof updateAttributionAvailability === 'function') updateAttributionAvailability();
     } else {
         console.error('❌ WKTW failed to load after all retries.');
     }
@@ -497,6 +498,7 @@ async function loadWZUNData() {
             totalAdsId: 'wzunTotalAds',
             dateRangeId: 'wzunDateRange'
         });
+		if (typeof updateAttributionAvailability === 'function') updateAttributionAvailability();
     } else {
         console.error('❌ WZUN failed to load after all retries.');
     }
