@@ -79,6 +79,11 @@ async function fetchWelcomeChartData() {
             });
         } else {
             createWelcomeChart(chartData);
+			// Store hidden series for dynamic toggle
+			chartData.hiddenSeries.forEach(s => {
+    			hiddenSeriesStore[s.name] = s;
+			});
+			
         }
 
         hideChartLoading();
@@ -527,8 +532,8 @@ function processWelcomeData(googleData, metaData, tvRadioData, patientData) {
     // BUILD SERIES ARRAY
     // Order: totals first, then campaign detail (hidden), then radio, then patients
     // ----------------------------------------------------------------
-    const series = [
-        // Total spend lines — thick, solid, with markers
+    // Visible series — rendered immediately on chart init
+    const visibleSeries = [
         {
             name: 'Total Google Ads',
             type: 'line',
@@ -541,38 +546,12 @@ function processWelcomeData(googleData, metaData, tvRadioData, patientData) {
             data: metaRounded,
             color: META_COLOR
         },
-
-        // Google active campaigns (hidden by default) — thin dashed lines
-        ...googleCampaignSeries,
-
-        // Google historical aggregate (hidden by default) — thin dashed line
-        ...(hasGoogleHistorical ? [{
-            name: 'G: Inactive Campaigns',
-            type: 'line',
-            data: googleHistoricalRounded,
-            color: GOOGLE_MUTED
-        }] : []),
-
-        // Meta active campaigns (hidden by default) — thin dashed lines
-        ...metaCampaignSeries,
-
-        // Meta historical aggregate (hidden by default) — thin dashed line
-        ...(hasMetaHistorical ? [{
-            name: 'M: Inactive Campaigns',
-            type: 'line',
-            data: metaHistoricalRounded,
-            color: META_MUTED
-        }] : []),
-
-        // TV/Radio line — thick, solid, with markers (unchanged)
         {
             name: 'Total TV / Radio Ads',
             type: 'line',
             data: radioTotals,
             color: RADIO_COLOR
         },
-
-        // New Patient Leads — orange bar, third Y-axis
         {
             name: 'New Patient Leads',
             type: 'bar',
@@ -581,7 +560,25 @@ function processWelcomeData(googleData, metaData, tvRadioData, patientData) {
         }
     ];
 
-    return { labels, series };
+    // Hidden series — stored separately, added to chart only when toggled on
+    const hiddenSeries = [
+        ...googleCampaignSeries,
+        ...(hasGoogleHistorical ? [{
+            name: 'G: Inactive Campaigns',
+            type: 'line',
+            data: googleHistoricalRounded,
+            color: GOOGLE_MUTED
+        }] : []),
+        ...metaCampaignSeries,
+        ...(hasMetaHistorical ? [{
+            name: 'M: Inactive Campaigns',
+            type: 'line',
+            data: metaHistoricalRounded,
+            color: META_MUTED
+        }] : []),
+    ];
+
+    return { labels, series: visibleSeries, hiddenSeries };
 }
 
 // ============================================================
@@ -678,30 +675,25 @@ function createWelcomeChart(chartData) {
             animations: { enabled: true, easing: 'easeinout', speed: 600 },
             events: {
                 mounted: function(chartCtx) {
-                    console.log('🎯 Chart mounted fired, series count:', chartData.series.length);
+    			console.log('🎯 Chart mounted fired, series count:', chartData.series.length);
 
-                    // Hide all campaign detail series on mount
-                    chartData.series.forEach(s => {
-                        if (s.name.startsWith('G: ') || s.name.startsWith('M: ')) {
-                            chartCtx.hideSeries(s.name);
-                        }
-                    });
+    			// No hideSeries() calls — campaign series are excluded from
+    			// initial render entirely. They are added dynamically on toggle.
+    			console.log('🔍 Zooming to:', initialMin, '->', initialMax);
 
-                    console.log('🔍 Zooming to:', initialMin, '->', initialMax);
-                    console.log('🔍 Indices:', allLabels.indexOf(initialMin), allLabels.indexOf(initialMax));
+    		// Set initial zoom to last 52 weeks
+    	chartCtx.zoomX(
+        allLabels.indexOf(initialMin),
+        allLabels.indexOf(initialMax)
+    );
 
-                    // Set initial zoom to last 52 weeks
-                    chartCtx.zoomX(
-                        allLabels.indexOf(initialMin),
-                        allLabels.indexOf(initialMax)
-                    );
-
-                    chartNavInit(totalWeeks, initialMin, initialMax, allLabels);
-                    renderChartNavPanel();
-                    renderCampaignTogglePanel();
-                }
-            }
-        },
+    chartNavInit(totalWeeks, initialMin, initialMax, allLabels);
+    renderChartNavPanel();
+    renderCampaignTogglePanel();
+				} // closes mounted function
+			} //closes events
+        }, //closes chart, comma continues options object
+		
         colors: chartData.series.map(s => s.color),
         dataLabels: { enabled: false },
         stroke: {
@@ -937,16 +929,30 @@ const campaignVisibility = {};
 /**
  * Toggle a campaign series on/off
  */
+// Stores hidden series data for dynamic addition to chart
+let hiddenSeriesStore = {};
+
 function toggleCampaignSeries(seriesName, btn) {
     const isVisible = campaignVisibility[seriesName] || false;
 
     if (isVisible) {
-        welcomeChart.hideSeries(seriesName);
+        // Remove series from chart entirely
+        const currentSeries = welcomeChart.w.config.series;
+        const updated = currentSeries.filter(s => s.name !== seriesName);
+        // Store it for later re-addition
+        const removed = currentSeries.find(s => s.name === seriesName);
+        if (removed) hiddenSeriesStore[seriesName] = removed;
+        welcomeChart.updateSeries(updated, false);
         campaignVisibility[seriesName] = false;
         btn.classList.remove('toggle-btn--active');
         btn.classList.add('toggle-btn--inactive');
     } else {
-        welcomeChart.showSeries(seriesName);
+        // Add series back to chart
+        const seriesData = hiddenSeriesStore[seriesName];
+        if (seriesData) {
+            const currentSeries = welcomeChart.w.config.series;
+            welcomeChart.updateSeries([...currentSeries, seriesData], false);
+        }
         campaignVisibility[seriesName] = true;
         btn.classList.remove('toggle-btn--inactive');
         btn.classList.add('toggle-btn--active');
