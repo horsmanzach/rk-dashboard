@@ -1074,10 +1074,10 @@ window.addEventListener('load', function () {
         loadTVRadioData();
         loadAlbanyData();
         loadMontrealData();
-        // Station fetches staggered at 5-second intervals
+        // Station fetches staggered at .5-second intervals
         setTimeout(() => loadWTLAData(),  0);
-        setTimeout(() => loadWKRLData(),  5000);
-        setTimeout(() => loadWKTWData(),  10000);
-        setTimeout(() => loadWZUNData(),  15000);
+        setTimeout(() => loadWKRLData(),  500);
+        setTimeout(() => loadWKTWData(),  1000);
+        setTimeout(() => loadWZUNData(),  1500);
     }, 500);
 });
