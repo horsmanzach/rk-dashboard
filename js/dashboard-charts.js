@@ -41,6 +41,67 @@ if (document.readyState === 'loading') {
     initChart();
 }
 
+// ============================================================
+// CACHE STATUS — "Last updated X hours ago" label
+// ============================================================
+
+function fetchAndRenderCacheStatus() {
+    const formData = new FormData();
+    formData.append('action', 'rk_get_cache_status');
+    formData.append('nonce', dashboardConfig.nonce);
+
+    fetch(dashboardConfig.ajaxUrl, { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) return;
+
+            // Find the most recent cached_at timestamp across all sources
+            const timestamps = Object.values(result.data)
+                .map(s => s.cached_at)
+                .filter(Boolean);
+
+            if (timestamps.length === 0) return;
+
+            // Parse timestamps (format: "2026-07-14 02:03:41")
+            const dates = timestamps.map(t => new Date(t.replace(' ', 'T')));
+            const mostRecent = new Date(Math.max(...dates));
+
+            // Build relative label
+            const now = new Date();
+            const diffMs = now - mostRecent;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+
+            let label;
+            if (diffMins < 2) {
+                label = 'Data refreshed just now';
+            } else if (diffMins < 60) {
+                label = `Data refreshed ${diffMins} minutes ago`;
+            } else if (diffHours < 24) {
+                label = `Data refreshed ${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+            } else {
+                const diffDays = Math.floor(diffHours / 24);
+                label = `Data refreshed ${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+            }
+
+            // Insert label below chart container if it doesn't exist yet
+            let el = document.getElementById('cacheStatusLabel');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'cacheStatusLabel';
+                el.style.cssText = 'text-align:center; font-size:11px; color:#aaa; margin-top:4px; letter-spacing:0.02em;';
+                const chartContainer = document.querySelector('#welcomeUnifiedChart');
+                if (chartContainer && chartContainer.parentNode) {
+                    chartContainer.parentNode.insertBefore(el, chartContainer.nextSibling);
+                }
+            }
+            el.textContent = label;
+        })
+        .catch(() => {
+            // Silently fail — label just won't appear
+        });
+}
+
 window.addEventListener('load', initChart);
 
 function initChart() {
@@ -690,6 +751,7 @@ function createWelcomeChart(chartData) {
     chartNavInit(totalWeeks, initialMin, initialMax, allLabels);
     renderChartNavPanel();
     renderCampaignTogglePanel();
+	fetchAndRenderCacheStatus(); 
 				} // closes mounted function
 			} //closes events
         }, //closes chart, comma continues options object
