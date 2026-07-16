@@ -95,7 +95,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array('apexcharts', 'ad-dashboard-script'), // ← Must load AFTER both
-        '1.3.9', // Increment to bust cache
+        '1.4.4', // Increment to bust cache
         true
     );
     
@@ -1211,4 +1211,9 @@ function fetch_google_ads_data() {
 }
 add_action('wp_ajax_fetch_google_ads', 'fetch_google_ads_data');
 add_action('wp_ajax_nopriv_fetch_google_ads', 'fetch_google_ads_data');
+
+
+
+
+
 
