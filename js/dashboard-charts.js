@@ -678,7 +678,7 @@ function createWelcomeChart(chartData) {
     });
 
     const fillOpacity = chartData.series.map(s => {
-        if (s.type === 'bar') return 0.85;
+        if (s.type === 'bar') return 0.65;
         return 1;
     });
 
@@ -805,18 +805,29 @@ function createWelcomeChart(chartData) {
         },
         yaxis,
         tooltip: {
-            shared: true,
-            intersect: false,
-            y: {
-                formatter: function(val, opts) {
-                    if (val === undefined || val === null) return undefined;
-                    const name = opts.w.config.series[opts.seriesIndex].name;
-                    if (name === 'Total TV / Radio Ads') return Math.round(val) + ' ads played';
-                    if (name === 'New Patient Leads') return Math.round(val) + ' leads';
-                    return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                }
-            }
-        },
+    shared: true,
+    intersect: false,
+    x: {
+        formatter: function(val, opts) {
+            const idx = opts.dataPointIndex;
+            const label = allLabels[idx];
+            if (!label) return val;
+            const parts = label.split(' ');
+            return parts.length === 3
+                ? `Week of ${parts[0]} ${parts[1]}, ${parts[2]}`
+                : label;
+        }
+    },
+    y: {
+        formatter: function(val, opts) {
+            if (val === undefined || val === null) return undefined;
+            const name = opts.w.config.series[opts.seriesIndex].name;
+            if (name === 'Total TV / Radio Ads') return Math.round(val) + ' ads played';
+            if (name === 'New Patient Leads') return Math.round(val) + ' leads';
+            return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+    }
+},
         legend: { show: false },
         title: {
             text: 'Paid Ad Campaign Performance Overview',
@@ -994,9 +1005,14 @@ const campaignVisibility = {};
 // Stores hidden series data for dynamic addition to chart
 let hiddenSeriesStore = {};
 
+function buildFillOpacity(seriesArray) {
+    return seriesArray.map(s => s.type === 'bar' ? 0.65 : 1);
+}
+
 function toggleCampaignSeries(seriesName, btn) {
     const isVisible = campaignVisibility[seriesName] || false;
-    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+    const OVERVIEW_TOTALS = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads', 'New Patient Leads'];
+
     function buildYaxis(seriesArray) {
         return seriesArray.map(s => {
             if (s.name === 'Total Google Ads') {
@@ -1025,34 +1041,101 @@ function toggleCampaignSeries(seriesName, btn) {
             return { seriesName: 'Total Google Ads', show: false };
         });
     }
+
+    if (OVERVIEW_TOTALS.includes(seriesName)) {
+    welcomeChart.toggleSeries(seriesName);
+    campaignVisibility[seriesName] = !isVisible;
+    if (isVisible) {
+        btn.classList.remove('toggle-btn--active');
+        btn.classList.add('toggle-btn--inactive');
+    } else {
+        btn.classList.remove('toggle-btn--inactive');
+        btn.classList.add('toggle-btn--active');
+    }
+
+    // Rebuild yaxis so the left spend axis stays visible as long as
+    // either Google or Meta is on, anchored to whichever is still visible.
+    const googleOn = campaignVisibility['Total Google Ads'];
+    const metaOn   = campaignVisibility['Total Meta Ads'];
+    const spendAnchor = googleOn ? 'Total Google Ads' : metaOn ? 'Total Meta Ads' : null;
+
+    const currentSeries = welcomeChart.w.config.series;
+    const updatedYaxis = currentSeries.map(s => {
+        if (s.name === 'Total Google Ads' || s.name === 'Total Meta Ads') {
+            if (s.name === spendAnchor) {
+                return {
+                    seriesName: spendAnchor,
+                    title: {
+                        text: 'Ad Spend ($)',
+                        style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' }
+                    },
+                    labels: { formatter: val => '$' + Math.round(val).toLocaleString() }
+                };
+            }
+            // Non-anchor spend series shares the visible axis
+            return { seriesName: spendAnchor || 'Total Google Ads', show: false };
+        }
+        if (s.name === 'Total TV / Radio Ads') {
+            return {
+                seriesName: 'Total TV / Radio Ads',
+                opposite: true,
+                title: { text: 'TV / Radio Ads Played', style: { fontSize: '16px', fontWeight: 600, color: '#ff6b6b' } },
+                labels: { formatter: val => Math.round(val) + ' ads' }
+            };
+        }
+        if (s.name === 'New Patient Leads') {
+            return {
+                seriesName: 'New Patient Leads',
+                opposite: true,
+                title: { text: 'New Patient Leads', style: { fontSize: '16px', fontWeight: 600, color: '#c9a84c' } },
+                labels: { formatter: val => Math.round(val) + ' leads' }
+            };
+        }
+        return { seriesName: spendAnchor || 'Total Google Ads', show: false };
+    });
+
+    welcomeChart.updateOptions({ yaxis: updatedYaxis }, false, false);
+
+    requestAnimationFrame(() => {
+        welcomeChart.zoomX(chartNav.min, chartNav.max);
+    });
+    return;
+}
+
+    // Campaign series (not in initial render) — must use updateOptions to add/remove
     if (isVisible) {
         const currentSeries = welcomeChart.w.config.series;
         const updated = currentSeries.filter(s => s.name !== seriesName);
         const removed = currentSeries.find(s => s.name === seriesName);
         if (removed) hiddenSeriesStore[seriesName] = removed;
-        welcomeChart.updateOptions({ series: updated, yaxis: buildYaxis(updated) }, false, false);
+        welcomeChart.updateOptions({
+            series: updated,
+            yaxis: buildYaxis(updated),
+            fill: { opacity: buildFillOpacity(updated) }
+        }, false, false);
         campaignVisibility[seriesName] = false;
         btn.classList.remove('toggle-btn--active');
         btn.classList.add('toggle-btn--inactive');
-        requestAnimationFrame(() => {
-            welcomeChart.zoomX(chartNav.min, chartNav.max);
-        });
     } else {
         const seriesData = hiddenSeriesStore[seriesName];
         if (seriesData) {
             const currentSeries = welcomeChart.w.config.series;
             const newSeries = [...currentSeries, seriesData];
-            welcomeChart.updateOptions({ series: newSeries, yaxis: buildYaxis(newSeries) }, false, false);
+            welcomeChart.updateOptions({
+                series: newSeries,
+                yaxis: buildYaxis(newSeries),
+                fill: { opacity: buildFillOpacity(newSeries) }
+            }, false, false);
         }
         campaignVisibility[seriesName] = true;
         btn.classList.remove('toggle-btn--inactive');
         btn.classList.add('toggle-btn--active');
-        requestAnimationFrame(() => {
-            welcomeChart.zoomX(chartNav.min, chartNav.max);
-        });
     }
 
-    // Update Clear All button visibility for this platform
+    requestAnimationFrame(() => {
+        welcomeChart.zoomX(chartNav.min, chartNav.max);
+    });
+
     const meta = campaignSeriesMeta.find(c => c.seriesName === seriesName);
     if (meta) updateClearAllButton(meta.platform);
 }
