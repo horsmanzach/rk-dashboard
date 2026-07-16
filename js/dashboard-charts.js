@@ -113,7 +113,7 @@ function initChart() {
     }
     chartInitialized = true;
     console.log('🚀 Initializing chart...');
-    setTimeout(() => fetchWelcomeChartData(), 500);
+    setTimeout(() => fetchWelcomeChartData(), 100);
 }
 
 // ============================================================
@@ -141,9 +141,8 @@ async function fetchWelcomeChartData() {
         } else {
             createWelcomeChart(chartData);
 			// Store hidden series for dynamic toggle
-			chartData.hiddenSeries.forEach(s => {
-    			hiddenSeriesStore[s.name] = s;
-			});
+			chartData.series.forEach(s => { allSeriesStore[s.name] = s; });
+			chartData.hiddenSeries.forEach(s => { allSeriesStore[s.name] = s; });
 			
         }
 
@@ -213,11 +212,11 @@ async function fetchAllTVRadioData() {
     // Kept as a light fallback buffer for cache miss scenarios
 	
     const wtla = await fetchStation('fetch_wtla_ads');
-    await sleep(500);
+    await sleep(100);
     const wkrl = await fetchStation('fetch_tvradio_ads');
-    await sleep(500);
+    await sleep(100);
     const wktw = await fetchStation('fetch_wktw_ads');
-    await sleep(500);
+    await sleep(100);
     const wzun = await fetchStation('fetch_wzun_ads');
 
     return {
@@ -1003,48 +1002,43 @@ const campaignVisibility = {};
  * Toggle a campaign series on/off
  */
 // Stores hidden series data for dynamic addition to chart
-let hiddenSeriesStore = {};
+let allSeriesStore = {};
 
 function buildFillOpacity(seriesArray) {
     return seriesArray.map(s => s.type === 'bar' ? 0.65 : 1);
 }
 
+function buildStrokeWidths(seriesArray) {
+    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+    return seriesArray.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 3;
+        return 1.5;
+    });
+}
+
+function buildDashArray(seriesArray) {
+    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+    return seriesArray.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 0;
+        return 5;
+    });
+}
+
+function buildMarkerSizes(seriesArray) {
+    const TOTAL_SERIES = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads'];
+    return seriesArray.map(s => {
+        if (s.type === 'bar') return 0;
+        if (TOTAL_SERIES.includes(s.name)) return 4;
+        return 0;
+    });
+}
+
 function toggleCampaignSeries(seriesName, btn) {
     const isVisible = campaignVisibility[seriesName] || false;
-    const OVERVIEW_TOTALS = ['Total Google Ads', 'Total Meta Ads', 'Total TV / Radio Ads', 'New Patient Leads'];
-
-    function buildYaxis(seriesArray) {
-        return seriesArray.map(s => {
-            if (s.name === 'Total Google Ads') {
-                return {
-                    seriesName: 'Total Google Ads',
-                    title: { text: 'Ad Spend ($)', style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' } },
-                    labels: { formatter: val => '$' + Math.round(val).toLocaleString() }
-                };
-            }
-            if (s.name === 'Total TV / Radio Ads') {
-                return {
-                    seriesName: 'Total TV / Radio Ads',
-                    opposite: true,
-                    title: { text: 'TV / Radio Ads Played', style: { fontSize: '16px', fontWeight: 600, color: '#ff6b6b' } },
-                    labels: { formatter: val => Math.round(val) + ' ads' }
-                };
-            }
-            if (s.name === 'New Patient Leads') {
-                return {
-                    seriesName: 'New Patient Leads',
-                    opposite: true,
-                    title: { text: 'New Patient Leads', style: { fontSize: '16px', fontWeight: 600, color: '#c9a84c' } },
-                    labels: { formatter: val => Math.round(val) + ' leads' }
-                };
-            }
-            return { seriesName: 'Total Google Ads', show: false };
-        });
-    }
-
-    if (OVERVIEW_TOTALS.includes(seriesName)) {
-    welcomeChart.toggleSeries(seriesName);
     campaignVisibility[seriesName] = !isVisible;
+
     if (isVisible) {
         btn.classList.remove('toggle-btn--active');
         btn.classList.add('toggle-btn--inactive');
@@ -1053,26 +1047,25 @@ function toggleCampaignSeries(seriesName, btn) {
         btn.classList.add('toggle-btn--active');
     }
 
-    // Rebuild yaxis so the left spend axis stays visible as long as
-    // either Google or Meta is on, anchored to whichever is still visible.
+    // Rebuild series array from canonical store based on current visibility state
+    const newSeries = Object.keys(campaignVisibility)
+        .filter(name => campaignVisibility[name] && allSeriesStore[name])
+        .map(name => allSeriesStore[name]);
+
+    // Determine spend axis anchor
     const googleOn = campaignVisibility['Total Google Ads'];
     const metaOn   = campaignVisibility['Total Meta Ads'];
     const spendAnchor = googleOn ? 'Total Google Ads' : metaOn ? 'Total Meta Ads' : null;
 
-    const currentSeries = welcomeChart.w.config.series;
-    const updatedYaxis = currentSeries.map(s => {
+    const updatedYaxis = newSeries.map(s => {
         if (s.name === 'Total Google Ads' || s.name === 'Total Meta Ads') {
             if (s.name === spendAnchor) {
                 return {
                     seriesName: spendAnchor,
-                    title: {
-                        text: 'Ad Spend ($)',
-                        style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' }
-                    },
+                    title: { text: 'Ad Spend ($)', style: { fontSize: '16px', fontWeight: 600, color: '#4285f4' } },
                     labels: { formatter: val => '$' + Math.round(val).toLocaleString() }
                 };
             }
-            // Non-anchor spend series shares the visible axis
             return { seriesName: spendAnchor || 'Total Google Ads', show: false };
         }
         if (s.name === 'Total TV / Radio Ads') {
@@ -1094,43 +1087,23 @@ function toggleCampaignSeries(seriesName, btn) {
         return { seriesName: spendAnchor || 'Total Google Ads', show: false };
     });
 
-    welcomeChart.updateOptions({ yaxis: updatedYaxis }, false, false);
-
-    requestAnimationFrame(() => {
-        welcomeChart.zoomX(chartNav.min, chartNav.max);
-    });
-    return;
-}
-
-    // Campaign series (not in initial render) — must use updateOptions to add/remove
-    if (isVisible) {
-        const currentSeries = welcomeChart.w.config.series;
-        const updated = currentSeries.filter(s => s.name !== seriesName);
-        const removed = currentSeries.find(s => s.name === seriesName);
-        if (removed) hiddenSeriesStore[seriesName] = removed;
-        welcomeChart.updateOptions({
-            series: updated,
-            yaxis: buildYaxis(updated),
-            fill: { opacity: buildFillOpacity(updated) }
-        }, false, false);
-        campaignVisibility[seriesName] = false;
-        btn.classList.remove('toggle-btn--active');
-        btn.classList.add('toggle-btn--inactive');
-    } else {
-        const seriesData = hiddenSeriesStore[seriesName];
-        if (seriesData) {
-            const currentSeries = welcomeChart.w.config.series;
-            const newSeries = [...currentSeries, seriesData];
-            welcomeChart.updateOptions({
-                series: newSeries,
-                yaxis: buildYaxis(newSeries),
-                fill: { opacity: buildFillOpacity(newSeries) }
-            }, false, false);
-        }
-        campaignVisibility[seriesName] = true;
-        btn.classList.remove('toggle-btn--inactive');
-        btn.classList.add('toggle-btn--active');
-    }
+    welcomeChart.updateOptions({
+    series: newSeries,
+    yaxis: updatedYaxis,
+    fill: { opacity: buildFillOpacity(newSeries) },
+    stroke: {
+        width: buildStrokeWidths(newSeries),
+        curve: 'smooth',
+        dashArray: buildDashArray(newSeries),
+        lineCap: 'round'
+    },
+    markers: {
+        size: buildMarkerSizes(newSeries),
+        strokeWidth: 2,
+        hover: { size: 6 }
+    },
+    colors: newSeries.map(s => s.color)
+}, false, false);
 
     requestAnimationFrame(() => {
         welcomeChart.zoomX(chartNav.min, chartNav.max);
