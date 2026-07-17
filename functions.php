@@ -64,7 +64,7 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.2.3',
+        '1.2.5',
         true
     );
 
@@ -99,7 +99,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array( 'apexcharts', 'ad-dashboard-script' ),
-        '1.4.7',
+        '1.5.0',
         true
     );
 
@@ -122,7 +122,7 @@ function enqueue_attribution_panel_script() {
         'attribution-panel',
         get_stylesheet_directory_uri() . '/js/attribution-panel.js',
         array( 'jquery', 'apexcharts', 'ad-dashboard-script' ),
-        '1.1.6',
+        '1.1.8',
         true
     );
 }
@@ -526,3 +526,4 @@ function fetch_google_ads_data() {
 }
 add_action( 'wp_ajax_fetch_google_ads',        'fetch_google_ads_data' );
 add_action( 'wp_ajax_nopriv_fetch_google_ads', 'fetch_google_ads_data' );
+
