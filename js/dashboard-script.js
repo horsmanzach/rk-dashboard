@@ -204,6 +204,18 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+function showMetricLoadingSpinner(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;padding:3rem 0;grid-column:1/-1;">
+            <div style="text-align:center;">
+                <div style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #ff6600;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1rem;"></div>
+                <p style="color:#999;font-size:0.95rem;">Loading metrics...</p>
+            </div>
+        </div>`;
+}
+
 // Syracuse Station Navigation
 let currentStationView = 'overview';
 
@@ -738,11 +750,14 @@ function selectGoogleTimeRange(days) {
 function loadGoogleCampaignMetrics(campaignId, days) {
     console.log(`🔵 Loading metrics for campaign ${campaignId}, last ${days} days`);
 
-    const formData = new FormData();
+	showMetricLoadingSpinner('googleCampaignMetricsContainer');
+
+   	 const formData = new FormData();
     formData.append('action', 'fetch_google_campaign_metrics');
     formData.append('nonce', dashboardConfig.nonce);
     formData.append('campaign_id', campaignId);
     formData.append('days', days);
+
 
     fetch(dashboardConfig.ajaxUrl, {
         method: 'POST',
@@ -763,11 +778,29 @@ function loadGoogleCampaignMetrics(campaignId, days) {
                         ? (data.impressions / 1000).toFixed(1) + 'K'
                         : data.impressions.toLocaleString();
 
-                document.getElementById('googleCampaignSpent').textContent = spentFormatted;
-                document.getElementById('googleCampaignImpressions').textContent = impressionsFormatted;
-                document.getElementById('googleCampaignClicks').textContent = data.clicks.toLocaleString();
-                document.getElementById('googleCampaignCTR').textContent = data.ctr + '%';
-                document.getElementById('googleCampaignAvgCPC').textContent = '$' + data.avgCpc;
+                document.getElementById('googleCampaignMetricsContainer').innerHTML = `
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-label">Total Spent</div>
+            <div class="stat-value">${spentFormatted}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Impressions</div>
+            <div class="stat-value">${impressionsFormatted}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Clicks</div>
+            <div class="stat-value">${data.clicks.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">CTR</div>
+            <div class="stat-value">${data.ctr}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg CPC</div>
+            <div class="stat-value">$${data.avgCpc}</div>
+        </div>
+    </div>`;
 
                 console.log('✅ Metrics updated');
             } else {
@@ -967,18 +1000,7 @@ function selectFacebookTimeRange(days) {
 function loadFacebookCampaignMetrics(campaignId, days) {
     console.log(`🔵 loadFacebookCampaignMetrics called for: ${campaignId}, last ${days} days`);
 
-    // Show loading state
-    const metricIds = [
-        'facebookCampaignSpent',
-        'facebookCampaignImpressions',
-        'facebookCampaignClicks',
-        'facebookCampaignCTR',
-        'facebookCampaignAvgCPC'
-    ];
-    metricIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = '—';
-    });
+	showMetricLoadingSpinner('facebookCampaignMetricsContainer');
 
     const formData = new FormData();
     formData.append('action', 'fetch_facebook_campaign_adsets');
@@ -1029,19 +1051,35 @@ function loadFacebookCampaignMetrics(campaignId, days) {
                         : totalImpressions.toLocaleString();
 
                 // Populate the Google-style metric elements
-                document.getElementById('facebookCampaignSpent').textContent       = spentFormatted;
-                document.getElementById('facebookCampaignImpressions').textContent = impressionsFormatted;
-                document.getElementById('facebookCampaignClicks').textContent      = totalClicks.toLocaleString();
-                document.getElementById('facebookCampaignCTR').textContent         = totalCTR + '%';
-                document.getElementById('facebookCampaignAvgCPC').textContent      = '$' + totalAvgCPC;
+                document.getElementById('facebookCampaignMetricsContainer').innerHTML = `
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="stat-label">Total Spent</div>
+            <div class="stat-value">${spentFormatted}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Impressions</div>
+            <div class="stat-value">${impressionsFormatted}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Clicks</div>
+            <div class="stat-value">${totalClicks.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">CTR</div>
+            <div class="stat-value">${totalCTR}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg CPC</div>
+            <div class="stat-value">$${totalAvgCPC}</div>
+        </div>
+    </div>`;
 
                 console.log('✅ Facebook campaign metrics populated');
-            } else {
+          } else {
                 console.error('❌ AJAX Error:', result);
-                metricIds.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.textContent = 'Error';
-                });
+                document.getElementById('facebookCampaignMetricsContainer').innerHTML = 
+                    '<p style="text-align:center;color:#999;padding:2rem;">Error loading metrics. Please try again.</p>';
             }
         })
         .catch(error => {
