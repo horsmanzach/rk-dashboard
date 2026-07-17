@@ -926,7 +926,7 @@ function showFacebookCampaignDetail(campaignId, campaignName) {
             );
 
             resetFacebookTimeRangeButtons();
-            loadCampaignAdSets(currentFacebookCampaignId, currentFacebookTimeRange);
+            loadFacebookCampaignMetrics(currentFacebookCampaignId, currentFacebookTimeRange);
         }
     });
 }
@@ -961,15 +961,23 @@ function selectFacebookTimeRange(days) {
     });
     event.target.classList.add('active');
 
-    loadCampaignAdSets(currentFacebookCampaignId, days);
+    loadFacebookCampaignMetrics(currentFacebookCampaignId, days);
 }
 
-function loadCampaignAdSets(campaignId, days) {
-    console.log(`🔵 loadCampaignAdSets called for: ${campaignId}, last ${days} days`);
-    console.log('📤 Sending to WordPress:', {
-        action: 'fetch_facebook_campaign_adsets',
-        campaign_id: campaignId,
-        days: days
+function loadFacebookCampaignMetrics(campaignId, days) {
+    console.log(`🔵 loadFacebookCampaignMetrics called for: ${campaignId}, last ${days} days`);
+
+    // Show loading state
+    const metricIds = [
+        'facebookCampaignSpent',
+        'facebookCampaignImpressions',
+        'facebookCampaignClicks',
+        'facebookCampaignCTR',
+        'facebookCampaignAvgCPC'
+    ];
+    metricIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '—';
     });
 
     const formData = new FormData();
@@ -984,87 +992,60 @@ function loadCampaignAdSets(campaignId, days) {
     })
         .then(response => response.json())
         .then(result => {
-            console.log('✅ Ad Sets Response:', result);
+            console.log('✅ Facebook Campaign Metrics Response:', result);
 
-            if (result.success && result.data) {
-                const data = result.data;
+            if (result.success && result.data && result.data.adsets) {
+                const adsets = result.data.adsets;
 
-                const totalAdSetsEl = document.getElementById('campaignTotalAdSets');
-                if (totalAdSetsEl) totalAdSetsEl.textContent = data.totalAdSets || '0';
+                // Aggregate totals across all ad sets
+                let totalSpend       = 0;
+                let totalImpressions = 0;
+                let totalClicks      = 0;
 
-                const grid = document.getElementById('facebookAdSetGrid');
-                if (!grid) return;
-
-                grid.innerHTML = '';
-
-                if (!data.adsets || data.adsets.length === 0) {
-                    grid.innerHTML = '<p style="text-align: center; color: #999;">No active ad sets found</p>';
-                    return;
-                }
-
-                data.adsets.forEach(adset => {
-                    const card = document.createElement('div');
-                    card.className = 'campaign-card';
-
-                    const spendFormatted = '$' + adset.spend.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-                    const impressionsFormatted = adset.impressions >= 1000000
-                        ? (adset.impressions / 1000000).toFixed(1) + 'M'
-                        : adset.impressions >= 1000
-                            ? (adset.impressions / 1000).toFixed(1) + 'K'
-                            : adset.impressions.toLocaleString();
-
-                    const reachFormatted = adset.reach >= 1000000
-                        ? (adset.reach / 1000000).toFixed(1) + 'M'
-                        : adset.reach >= 1000
-                            ? (adset.reach / 1000).toFixed(1) + 'K'
-                            : adset.reach.toLocaleString();
-
-                    card.innerHTML = `
-                        <div class="campaign-header">
-                            <h4 class="campaign-name">${adset.name}</h4>
-                        </div>
-                        <div style="font-size: 0.85rem; color: #666; margin-bottom: 1rem;">
-                            ${adset.activeAds} Active Ad${adset.activeAds !== 1 ? 's' : ''}
-                        </div>
-                        <div class="campaign-metrics">
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">Total Spent</span>
-                                <span class="campaign-metric-value">${spendFormatted}</span>
-                            </div>
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">Impressions</span>
-                                <span class="campaign-metric-value">${impressionsFormatted}</span>
-                            </div>
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">Clicks</span>
-                                <span class="campaign-metric-value">${adset.clicks.toLocaleString()}</span>
-                            </div>
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">CTR</span>
-                                <span class="campaign-metric-value">${adset.ctr}%</span>
-                            </div>
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">Reach</span>
-                                <span class="campaign-metric-value">${reachFormatted}</span>
-                            </div>
-                            <div class="campaign-metric">
-                                <span class="campaign-metric-label">CPC</span>
-                                <span class="campaign-metric-value">$${adset.cpc}</span>
-                            </div>
-                        </div>
-                    `;
-
-                    grid.appendChild(card);
+                adsets.forEach(adset => {
+                    totalSpend       += parseFloat(adset.spend)       || 0;
+                    totalImpressions += parseInt(adset.impressions)   || 0;
+                    totalClicks      += parseInt(adset.clicks)        || 0;
                 });
 
-                console.log('✅ Created', data.adsets.length, 'ad set cards');
+                // Recalculate CTR and CPC from aggregated totals
+                const totalCTR    = totalImpressions > 0
+                    ? ((totalClicks / totalImpressions) * 100).toFixed(2)
+                    : '0.00';
+                const totalAvgCPC = totalClicks > 0
+                    ? (totalSpend / totalClicks).toFixed(2)
+                    : '0.00';
+
+                // Format display values
+                const spentFormatted = '$' + totalSpend.toLocaleString('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                });
+
+                const impressionsFormatted = totalImpressions >= 1000000
+                    ? (totalImpressions / 1000000).toFixed(1) + 'M'
+                    : totalImpressions >= 1000
+                        ? (totalImpressions / 1000).toFixed(1) + 'K'
+                        : totalImpressions.toLocaleString();
+
+                // Populate the Google-style metric elements
+                document.getElementById('facebookCampaignSpent').textContent       = spentFormatted;
+                document.getElementById('facebookCampaignImpressions').textContent = impressionsFormatted;
+                document.getElementById('facebookCampaignClicks').textContent      = totalClicks.toLocaleString();
+                document.getElementById('facebookCampaignCTR').textContent         = totalCTR + '%';
+                document.getElementById('facebookCampaignAvgCPC').textContent      = '$' + totalAvgCPC;
+
+                console.log('✅ Facebook campaign metrics populated');
             } else {
                 console.error('❌ AJAX Error:', result);
+                metricIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = 'Error';
+                });
             }
         })
         .catch(error => {
-            console.error('❌ Error loading ad sets:', error);
+            console.error('❌ Error loading Facebook campaign metrics:', error);
         });
 }
 
