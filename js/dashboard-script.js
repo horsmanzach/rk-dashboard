@@ -91,8 +91,8 @@ function updateSyracuseOverview() {
     console.log(`✅ Syracuse Overview: ${totalStations} stations, ${totalOrders.size} orders, ${totalAds} ads`);
 }
 
-let currentSlide = 'welcome';
-let isAnimating = false;
+window.currentSlide = 'welcome';
+window.isAnimating = false;
 
 function navigateToSlide(target) {
     // Prevent navigation during animation or to same slide
@@ -101,15 +101,17 @@ function navigateToSlide(target) {
     isAnimating = true;
 
     const rows = {
-        welcome: document.querySelector('.welcome-row'),
-        google: document.querySelector('.google-row'),
-        facebook: document.querySelector('.facebook-row'),
-        tvradio: document.querySelector('.tvradio-row'),
-        albany: document.querySelector('.albany-row'),
-        montreal: document.querySelector('.montreal-row'),
-        syracuse: document.querySelector('.syracuse-row'),
-		attribution: document.querySelector('.attribution-row')
-    };
+    performance: document.querySelector('.welcome-row'),
+    welcome: document.querySelector('.welcome-row'),
+    campaigns: document.querySelector('.campaigns-row'),
+    google: document.querySelector('.google-row'),
+    facebook: document.querySelector('.facebook-row'),
+    tvradio: document.querySelector('.tvradio-row'),
+    albany: document.querySelector('.albany-row'),
+    montreal: document.querySelector('.montreal-row'),
+    syracuse: document.querySelector('.syracuse-row'),
+    attribution: document.querySelector('.attribution-row')
+};
 
     const currentRow = rows[currentSlide];
     const targetRow = rows[target];
@@ -118,15 +120,15 @@ function navigateToSlide(target) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // Determine animation direction
-    const isGoingBack = target === 'welcome';
+    const isGoingBack = target === 'welcome' || target === 'performance' || target === 'campaigns';
     const exitX = isGoingBack ? -50 : 50;
     const enterX = isGoingBack ? 50 : -50;
 
     // Animation timeline
     const tl = gsap.timeline({
         onComplete: () => {
-            isAnimating = false;
-            currentSlide = target;
+            window.isAnimating = false;
+            window.currentSlide = target;
         }
     });
 
@@ -156,32 +158,43 @@ function navigateToSlide(target) {
     }, '-=0.1');
 
     // Animate content within slides
-    if (target !== 'welcome') {
-        // Animate slide content
-        tl.from(targetRow.querySelector('.slide-content'), {
+if (target === 'welcome' || target === 'performance') {
+    tl.from('.welcome-title', {
+        y: -20,
+        opacity: 0,
+        duration: 0.3,
+        ease: 'power2.out'
+    }, '-=0.2');
+
+    tl.from('.option-card', {
+        y: 20,
+        opacity: 0,
+        duration: 0.3,
+        stagger: 0.08,
+        ease: 'power2.out'
+    }, '-=0.15');
+
+} else if (target === 'campaigns') {
+    tl.from(targetRow.querySelectorAll('.option-card'), {
+        y: 20,
+        opacity: 0,
+        duration: 0.3,
+        stagger: 0.08,
+        ease: 'power2.out'
+    }, '-=0.2');
+
+} else {
+    const slideContent = targetRow.querySelector('.slide-content');
+    if (slideContent) {
+        tl.from(slideContent, {
             scale: 0.95,
             y: 20,
             opacity: 0,
             duration: 0.3,
             ease: 'back.out(1.2)'
         }, '-=0.2');
-    } else {
-        // Animate welcome content
-        tl.from('.welcome-title', {
-            y: -20,
-            opacity: 0,
-            duration: 0.3,
-            ease: 'power2.out'
-        }, '-=0.2');
-
-        tl.from('.option-card', {
-            y: 20,
-            opacity: 0,
-            duration: 0.3,
-            stagger: 0.08,
-            ease: 'power2.out'
-        }, '-=0.15');
     }
+}
 }
 
 // Keyboard navigation - ESC to return to welcome screen
@@ -1065,9 +1078,13 @@ function loadCampaignAdSets(campaignId, days) {
 // ============================================================
 window.addEventListener('load', function () {
 
-// Hide attribution row on initial load
+    // Hide attribution row on initial load
     const attributionRow = document.querySelector('.attribution-row');
     if (attributionRow) attributionRow.style.display = 'none';
+
+    // Hide campaigns row on initial load
+    const campaignsRow = document.querySelector('.campaigns-row');
+    if (campaignsRow) campaignsRow.style.display = 'none';
 
 	
     setTimeout(() => {
