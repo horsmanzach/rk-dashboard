@@ -379,7 +379,28 @@ function renderAttributionData(data, station, date) {
             markers: { size: 3 },
             annotations: { xaxis: annotations },
             grid:    { borderColor: '#f0f0f0' },
-            tooltip: { y: { formatter: val => val + ' sessions' } }
+            tooltip: {
+    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+        const sessions = series[seriesIndex][dataPointIndex];
+        const hoveredHour = dataPointIndex;
+
+        const airedSpots = spots.filter(spot => spot.hour === hoveredHour);
+
+        let airTimeLines = '';
+        if (airedSpots.length > 0) {
+            airTimeLines = airedSpots.map(spot =>
+                `<div style="color:#e34948;font-size:0.85rem;margin-top:4px;">
+                    Air Time: ${spot.airTime}
+                </div>`
+            ).join('');
+        }
+
+        return `<div style="padding:8px 12px;font-size:0.9rem;">
+            <div><strong>Sessions:</strong> ${sessions}</div>
+            ${airTimeLines}
+        </div>`;
+    }
+}
         }
     );
     window.attributionChartInstance.render();
