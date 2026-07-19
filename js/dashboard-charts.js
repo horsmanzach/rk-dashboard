@@ -892,6 +892,7 @@ function chartScrollLeft() {
         chartNav.min = chartNav.max - range;
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartScrollLeftOne() {
@@ -903,6 +904,7 @@ function chartScrollLeftOne() {
         chartNav.min = chartNav.max - range;
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartScrollRight() {
@@ -914,6 +916,7 @@ function chartScrollRight() {
         chartNav.max = range;
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartScrollRightOne() {
@@ -925,6 +928,7 @@ function chartScrollRightOne() {
         chartNav.max = range;
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartZoomIn() {
@@ -937,6 +941,7 @@ function chartZoomIn() {
         chartNav.min = chartNav.max - newRange;
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartZoomOut() {
@@ -949,6 +954,7 @@ function chartZoomOut() {
         chartNav.min = Math.max(0, chartNav.max - newRange);
     }
     chartNavApply();
+	updateNavButtonStates();
 }
 
 function chartZoomReset() {
@@ -956,7 +962,31 @@ function chartZoomReset() {
     chartNav.max = chartNav.total - 1;
     chartNav.min = chartNav.max - 51;
     chartNavApply();
+	updateNavButtonStates();
 }
+
+function updateNavButtonStates() {
+    const atStart = chartNav.min <= 0;
+    const atEnd   = chartNav.max >= chartNav.total - 1;
+
+    const btnBack4  = document.querySelector('[onclick="chartScrollLeft()"]');
+    const btnBack1  = document.querySelector('[onclick="chartScrollLeftOne()"]');
+    const btnFwd1   = document.querySelector('[onclick="chartScrollRightOne()"]');
+    const btnFwd4   = document.querySelector('[onclick="chartScrollRight()"]');
+
+    [btnBack4, btnBack1].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = atStart;
+        btn.classList.toggle('chart-nav__btn--disabled', atStart);
+    });
+
+    [btnFwd1, btnFwd4].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = atEnd;
+        btn.classList.toggle('chart-nav__btn--disabled', atEnd);
+    });
+}
+
 
 function renderChartNavPanel() {
     const panel = document.getElementById('chartNavPanel');
@@ -986,6 +1016,7 @@ function renderChartNavPanel() {
             </button>
         </div>
     `;
+	 setTimeout(() => updateNavButtonStates(), 0);
 }
 
 // ============================================================
