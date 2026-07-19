@@ -396,9 +396,10 @@ function renderAttributionData(data, station, date) {
         }
 
         return `<div style="padding:8px 12px;font-size:0.9rem;">
-            <div><strong>Sessions:</strong> ${sessions}</div>
-            ${airTimeLines}
-        </div>`;
+    <div style="font-weight:600;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid #e0e0e0;">${w.globals.categoryLabels[dataPointIndex]}</div>
+    <div><strong>Sessions:</strong> ${sessions}</div>
+    ${airTimeLines}
+</div>`;
     }
 }
         }
