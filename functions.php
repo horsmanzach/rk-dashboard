@@ -122,7 +122,7 @@ function enqueue_attribution_panel_script() {
         'attribution-panel',
         get_stylesheet_directory_uri() . '/js/attribution-panel.js',
         array( 'jquery', 'apexcharts', 'ad-dashboard-script' ),
-        '1.1.8',
+        '1.2.0',
         true
     );
 }
