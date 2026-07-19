@@ -99,7 +99,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array( 'apexcharts', 'ad-dashboard-script' ),
-        '1.5.0',
+        '1.5.1',
         true
     );
 
