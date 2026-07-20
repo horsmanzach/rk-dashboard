@@ -25,7 +25,8 @@
     const NAV_LINK_MAP = {
         'navlink-performance'  : 'performance',
         'navlink-campaigns'    : 'campaigns',
-        'navlink-attribution'  : 'attribution'
+        'navlink-attribution'  : 'attribution',
+		'navlink-leads'        : 'leads'
     };
 
     // Which sidebar link should be active for each slide target.
@@ -41,7 +42,8 @@
         albany       : 'navlink-campaigns',
         montreal     : 'navlink-campaigns',
         syracuse     : 'navlink-campaigns',
-        attribution  : 'navlink-attribution'
+        attribution  : 'navlink-attribution',
+		leads        : 'navlink-leads'
     };
 
 
@@ -92,6 +94,14 @@
                 }
             }, 450);
         }
+
+		if (target === 'leads') {
+    setTimeout(() => {
+        if (typeof showLeadsPanel === 'function') {
+            showLeadsPanel();
+        }
+    }, 450);
+}
     };
 
     console.log('✅ navbar.js: navigateToSlide() patched successfully');
