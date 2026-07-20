@@ -26,6 +26,7 @@ const PATIENT_COLOR       = '#c9a84c'; // Soft warm amber - muted gold
 
 let welcomeChart      = null;
 let chartInitialized  = false;
+let patientData = null;
 
 // Stores processed campaign series metadata for toggle panel rendering
 // { name, seriesName, platform, isHistorical }
@@ -124,14 +125,17 @@ async function fetchWelcomeChartData() {
     try {
         showChartLoading();
 
-        const [googleData, metaData, tvRadioData, patientData] = await Promise.all([
+        const [googleData, metaData, tvRadioData, patientDataFetched] = await Promise.all([
             fetchGoogleAdsOverview(),
             fetchMetaAdsOverview(),
             fetchAllTVRadioData(),
             fetchNewPatientsData()
         ]);
 
-        const chartData = processWelcomeData(googleData, metaData, tvRadioData, patientData);
+		patientData = patientDataFetched;
+		window.patientData = patientData;
+
+        const chartData = processWelcomeData(googleData, metaData, tvRadioData, patientDataFetched);
 
         if (welcomeChart) {
             welcomeChart.updateOptions({
