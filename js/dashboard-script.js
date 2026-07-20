@@ -59,7 +59,7 @@ let syracuseStationData = {
     wzun: null
 };
 
-// Function to aggregate Syracuse data and update overview
+// Function to aggregate Syracuse data and update overview, yep
 function updateSyracuseOverview() {
     console.log('📊 Updating Syracuse overview with aggregated data');
 
