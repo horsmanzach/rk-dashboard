@@ -110,7 +110,8 @@ function navigateToSlide(target) {
     albany: document.querySelector('.albany-row'),
     montreal: document.querySelector('.montreal-row'),
     syracuse: document.querySelector('.syracuse-row'),
-    attribution: document.querySelector('.attribution-row')
+    attribution: document.querySelector('.attribution-row'),
+	leads: document.querySelector('.leads-panel')
 };
 
     const currentRow = rows[currentSlide];
