@@ -24,7 +24,7 @@ function my_login_logo_url_title() {
     return 'Richard Kim MD';
 }
 
-/**
+/*
  * Redirect non-logged-in users away from the dashboard page
  */
 function rk_protect_dashboard_page() {
@@ -64,9 +64,13 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.2.5',
+        '1.2.7',
         true
     );
+
+	// Leads Panel enqueue script
+	wp_enqueue_script( 'leads-panel', get_stylesheet_directory_uri() . '/js/leads-panel.js', array('jquery', 'ad-dashboard-script', 'dashboard-chart'), '1.0.1', true );
+
 
     // Pass PHP variables to JS
     // displayName added: populates sidebar footer with logged-in user's name
@@ -99,7 +103,7 @@ function enqueue_dashboard_chart_script() {
         'dashboard-chart',
         get_stylesheet_directory_uri() . '/js/dashboard-charts.js',
         array( 'apexcharts', 'ad-dashboard-script' ),
-        '1.5.1',
+        '1.5.2',
         true
     );
 
@@ -140,7 +144,7 @@ function enqueue_navbar_script() {
         'rk-navbar',
         get_stylesheet_directory_uri() . '/js/navbar.js',
         array( 'gsap', 'ad-dashboard-script' ),
-        '1.0.2',
+        '1.0.3',
         true
     );
 }
@@ -470,6 +474,67 @@ function fetch_facebook_ads_summary() {
 }
 add_action( 'wp_ajax_fetch_facebook_ads_summary',        'fetch_facebook_ads_summary' );
 add_action( 'wp_ajax_nopriv_fetch_facebook_ads_summary', 'fetch_facebook_ads_summary' );
+
+// =============================================================================
+// AJAX ENDPOINTS — Daily Ad Spend (Leads & Spend Panel) - Google and Meta 
+// =============================================================================
+
+function fetch_daily_ad_spend() {
+    check_ajax_referer( 'dashboard_nonce', 'nonce' );
+
+    $start_date = isset( $_POST['startDate'] ) ? sanitize_text_field( $_POST['startDate'] ) : '';
+    $end_date   = isset( $_POST['endDate'] )   ? sanitize_text_field( $_POST['endDate'] )   : '';
+
+    if ( empty( $start_date ) || empty( $end_date ) ) {
+        wp_send_json_error( array(
+            'message' => 'Start date and end date are required',
+            'type'    => 'missing_params'
+        ));
+        return;
+    }
+
+    $webhook_url = add_query_arg( array(
+        'startDate' => $start_date,
+        'endDate'   => $end_date
+    ), 'https://automation.magnawebservices.com/webhook/daily-ad-spend' );
+
+    $response = wp_remote_get( $webhook_url, array(
+        'timeout'   => 60,
+        'sslverify' => true,
+        'headers'   => array( 'Accept' => 'application/json' )
+    ));
+
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( array(
+            'message' => 'Network error: ' . $response->get_error_message(),
+            'type'    => 'network_error'
+        ));
+        return;
+    }
+
+    $code = wp_remote_retrieve_response_code( $response );
+    if ( $code !== 200 ) {
+        wp_send_json_error( array(
+            'message' => 'HTTP error',
+            'code'    => $code,
+            'type'    => 'http_error'
+        ));
+        return;
+    }
+
+    $data = json_decode( wp_remote_retrieve_body( $response ), true );
+    if ( json_last_error() !== JSON_ERROR_NONE ) {
+        wp_send_json_error( array(
+            'message' => 'JSON error: ' . json_last_error_msg(),
+            'type'    => 'json_error'
+        ));
+        return;
+    }
+
+    wp_send_json_success( $data );
+}
+add_action( 'wp_ajax_fetch_daily_ad_spend',        'fetch_daily_ad_spend' );
+add_action( 'wp_ajax_nopriv_fetch_daily_ad_spend', 'fetch_daily_ad_spend' );
 
 
 // =============================================================================
