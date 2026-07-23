@@ -1106,6 +1106,10 @@ window.addEventListener('load', function () {
     const campaignsRow = document.querySelector('.campaigns-row');
     if (campaignsRow) campaignsRow.style.display = 'none';
 
+	  // Hide campaigns row on initial load
+    const leadsRow = document.querySelector('.leads-panel');
+    if (leadsRow) leadsRow.style.display = 'none';
+
 	
     setTimeout(() => {
         loadGoogleAdsData();
