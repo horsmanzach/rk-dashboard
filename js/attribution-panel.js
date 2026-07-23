@@ -3,10 +3,20 @@
 // ============================================================
 
 // State
-let attributionCalYear  = null;
-let attributionCalMonth = null; // 0-indexed
-let attributionSelectedDate = null;
-let attributionCurrentStation = 'WTLA';
+let attributionCalYear          = null;
+let attributionCalMonth         = null; // 0-indexed
+let attributionSelectedDate     = null;
+let attributionCurrentStation   = 'WTLA';
+
+// Lift window state — persists across date changes
+let attributionWindowBefore     = 1;
+let attributionWindowAfter      = 1;
+
+// Cached data from last successful load — used for client-side lift recalculation
+let attributionLastHourlySessions = [];
+let attributionLastSpots          = [];
+let attributionLastStation        = null;
+let attributionLastDate           = null;
 
 // ============================================================
 // AIR DATE INDEX
@@ -28,11 +38,11 @@ function buildAirDateIndex(station) {
             const parts = day.date.split('/');
             if (parts.length !== 3) return;
 
-            const month = parts[0].padStart(2, '0');
-            const d     = parts[1].padStart(2, '0');
-            const yr    = parseInt(parts[2]);
+            const month    = parts[0].padStart(2, '0');
+            const d        = parts[1].padStart(2, '0');
+            const yr       = parseInt(parts[2]);
             const fullYear = yr < 100 ? (yr >= 50 ? 1900 + yr : 2000 + yr) : yr;
-            const key = `${fullYear}-${month}-${d}`;
+            const key      = `${fullYear}-${month}-${d}`;
 
             index[key] = (index[key] || 0) + day.adCount;
         });
@@ -58,7 +68,7 @@ function getStationDateBounds(station) {
     function parseMMDDYY(str) {
         const parts = str.split('/');
         if (parts.length !== 3) return null;
-        const yr = parseInt(parts[2]);
+        const yr       = parseInt(parts[2]);
         const fullYear = yr < 100 ? (yr >= 50 ? 1900 + yr : 2000 + yr) : yr;
         return new Date(fullYear, parseInt(parts[0]) - 1, parseInt(parts[1]));
     }
@@ -67,6 +77,24 @@ function getStationDateBounds(station) {
         earliest: parseMMDDYY(range.start),
         latest:   parseMMDDYY(range.end)
     };
+}
+
+// ============================================================
+// CALENDAR HEATMAP TIERS
+// ============================================================
+const ATTR_TIERS = [
+    [7, 'attr-tier-4'],
+    [4, 'attr-tier-3'],
+    [2, 'attr-tier-2'],
+    [1, 'attr-tier-1'],
+    [0, 'attr-tier-0']
+];
+
+function getAttrTier(spotCount) {
+    for (const [min, cls] of ATTR_TIERS) {
+        if (spotCount >= min) return cls;
+    }
+    return 'attr-tier-0';
 }
 
 // ============================================================
@@ -86,18 +114,15 @@ function renderAttributionCalendar(station, year, month) {
                         'July','August','September','October','November','December'];
     const dayNames   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-    // First and last day of this month
     const firstDay  = new Date(year, month, 1);
     const lastDay   = new Date(year, month + 1, 0);
-    const startDow  = firstDay.getDay(); // 0=Sun
+    const startDow  = firstDay.getDay();
 
-    // Can we go prev/next?
     const prevMonthDate = new Date(year, month - 1, 1);
     const nextMonthDate = new Date(year, month + 1, 1);
     const canGoPrev = bounds ? prevMonthDate >= new Date(bounds.earliest.getFullYear(), bounds.earliest.getMonth(), 1) : true;
     const canGoNext = bounds ? nextMonthDate <= new Date(bounds.latest.getFullYear(), bounds.latest.getMonth(), 1) : true;
 
-    // Build header
     let html = `
         <div class="attribution-cal-header">
             <button class="attribution-cal-nav ${!canGoPrev ? 'disabled' : ''}"
@@ -111,39 +136,36 @@ function renderAttributionCalendar(station, year, month) {
         <div class="attribution-cal-grid">
     `;
 
-    // Day name headers
     dayNames.forEach(name => {
-        html += `<div class="attribution-cal-day-name">${name}</div>`;
+        html += `<div class="attribution-cal-dow">${name}</div>`;
     });
 
-    // Empty padding squares before the 1st
     for (let i = 0; i < startDow; i++) {
-        html += `<div class="attribution-cal-day empty"></div>`;
+        html += `<div class="attribution-cal-day attr-tier-0 empty"></div>`;
     }
 
-    // Day squares
     for (let day = 1; day <= lastDay.getDate(); day++) {
-        const mm     = String(month + 1).padStart(2, '0');
-        const dd     = String(day).padStart(2, '0');
-        const dateKey = `${year}-${mm}-${dd}`;
+        const mm       = String(month + 1).padStart(2, '0');
+        const dd       = String(day).padStart(2, '0');
+        const dateKey  = `${year}-${mm}-${dd}`;
         const thisDate = new Date(year, month, day);
 
-        const isSelected    = dateKey === attributionSelectedDate;
-        const spotCount     = airIndex[dateKey] || 0;
-        const hasSpots      = spotCount > 0;
-        const inRange       = bounds
+        const isSelected = dateKey === attributionSelectedDate;
+        const spotCount  = airIndex[dateKey] || 0;
+        const hasSpots   = spotCount > 0;
+        const inRange    = bounds
             ? (thisDate >= new Date(bounds.earliest.getFullYear(), bounds.earliest.getMonth(), bounds.earliest.getDate())
-            && thisDate <= new Date(bounds.latest.getFullYear(), bounds.latest.getMonth(), bounds.latest.getDate()))
+            && thisDate <= new Date(bounds.latest.getFullYear(),   bounds.latest.getMonth(),   bounds.latest.getDate()))
             : true;
 
-        let classes = 'attribution-cal-day';
-        if (isSelected)       classes += ' selected';
-        if (!inRange)         classes += ' out-of-range';
-        else if (hasSpots)    classes += ' has-spots';
-        else                  classes += ' no-spots';
-
+        const tier      = (inRange && hasSpots) ? getAttrTier(spotCount) : 'attr-tier-0';
         const clickable = inRange && hasSpots;
-        const onclick   = clickable ? `onclick="selectAttributionDate('${dateKey}')"` : '';
+
+        let classes = `attribution-cal-day ${tier}`;
+        if (isSelected) classes += ' selected';
+        if (!inRange)   classes += ' out-of-range';
+
+        const onclick = clickable ? `onclick="selectAttributionDate('${dateKey}')"` : '';
 
         let inner = `<span class="attribution-cal-day-num">${day}</span>`;
         if (hasSpots && inRange) {
@@ -153,7 +175,18 @@ function renderAttributionCalendar(station, year, month) {
         html += `<div class="${classes}" ${onclick}>${inner}</div>`;
     }
 
-    html += `</div>`; // close grid
+    html += `</div>`;
+
+    html += `
+        <div class="attribution-cal-legend">
+            <span class="attr-legend-label">Spots aired:</span>
+            <span class="attr-legend-swatch attr-tier-0"></span><span class="attr-legend-label">0</span>
+            <span class="attr-legend-swatch attr-tier-1"></span><span class="attr-legend-label">1</span>
+            <span class="attr-legend-swatch attr-tier-2"></span><span class="attr-legend-label">2–3</span>
+            <span class="attr-legend-swatch attr-tier-3"></span><span class="attr-legend-label">4–6</span>
+            <span class="attr-legend-swatch attr-tier-4"></span><span class="attr-legend-label">7+</span>
+        </div>
+    `;
 
     container.innerHTML = html;
 }
@@ -197,7 +230,7 @@ function onAttributionStationChange() {
     attributionSelectedDate   = null;
 
     // Hide any previously displayed results
-    document.getElementById('attributionChartCard').style.display = 'none';
+    document.getElementById('attributionChartCard').style.display  = 'none';
     document.getElementById('attributionTableCard').style.display  = 'none';
     document.getElementById('attributionLoading').style.display    = 'none';
 
@@ -255,7 +288,7 @@ function updateAttributionAvailability() {
 
     Object.entries(stationLabels).forEach(([key, label]) => {
         const stationData = syracuseStationData?.[key];
-        const range = stationData?.summary?.dateRange;
+        const range       = stationData?.summary?.dateRange;
 
         if (range?.start && range?.end) {
             const start = formatDate(range.start);
@@ -278,9 +311,21 @@ function loadAttributionData(dateKey) {
 
     if (!date) return;
 
-    document.getElementById('attributionLoading').style.display    = 'block';
-    document.getElementById('attributionChartCard').style.display  = 'none';
     document.getElementById('attributionTableCard').style.display  = 'none';
+    document.getElementById('attributionWindowControls').innerHTML = '';
+
+    // Show spinner inside the chart card so it renders in position above the calendar
+    const chartCard = document.getElementById('attributionChartCard');
+    chartCard.style.display = 'block';
+    chartCard.innerHTML = `
+        <div class="attribution-spinner-wrap">
+            <div class="attribution-spinner"></div>
+            <p class="attribution-spinner-label">Loading attribution data\u2026</p>
+        </div>
+    `;
+
+    // Scroll to spinner so user sees loading state
+    chartCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     jQuery.ajax({
         url:  dashboardConfig.ajaxUrl,
@@ -293,25 +338,161 @@ function loadAttributionData(dateKey) {
         },
         timeout: 35000,
         success: function(response) {
-            document.getElementById('attributionLoading').style.display = 'none';
             if (response.success) {
+                // Restore chart card structure (spinner replaced it) then render
+                const chartCard = document.getElementById('attributionChartCard');
+                chartCard.innerHTML = `
+                    <p class="attribution-card-label" id="attributionChartLabel"></p>
+                    <div id="attributionChartContainer" style="display:none;">
+                        <div id="attributionChart" style="height:220px;"></div>
+                        <div class="attribution-legend">
+                            <span class="attribution-legend-sessions"></span> Sessions per hour
+                            <span class="attribution-legend-spot"></span> Commercial aired
+                        </div>
+                    </div>
+                `;
                 renderAttributionData(response.data, station, date);
-                // Smooth scroll to results after ApexCharts has painted
-                setTimeout(() => {
-                    document.getElementById('attributionChartCard').scrollIntoView({
-                        behavior: 'smooth',
-                        block:    'start'
-                    });
-                }, 150);
             } else {
-                alert('Error loading attribution data: ' + (response.data?.message || 'Unknown error'));
+                const chartCard = document.getElementById('attributionChartCard');
+                chartCard.innerHTML = `<p class="attribution-card-label" id="attributionChartLabel">Error loading data: ${response.data?.message || 'Unknown error'}</p>`;
             }
         },
         error: function() {
-            document.getElementById('attributionLoading').style.display = 'none';
-            alert('Request failed. Please try again.');
+            const chartCard = document.getElementById('attributionChartCard');
+            chartCard.innerHTML = `<p class="attribution-card-label" id="attributionChartLabel">Request failed. Please try again.</p>`;
         }
     });
+}
+
+// ============================================================
+// LIFT WINDOW — Convert airTime string to 0-based hour integer
+// e.g. "2:15 PM" → 14,  "12:00 AM" → 0,  "12:30 PM" → 12
+// ============================================================
+function airTimeToHour(airTimeStr) {
+    if (!airTimeStr) return null;
+    const match = airTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return null;
+    let hours    = parseInt(match[1]);
+    const period = match[3].toUpperCase();
+    if (period === 'AM' && hours === 12) hours = 0;
+    if (period === 'PM' && hours !== 12) hours += 12;
+    return hours;
+}
+
+// ============================================================
+// LIFT WINDOW — Sum sessions for a range of hours from the
+// hourlySessions array.  Hours outside [0,23] are skipped
+// (boundary clamping) and null is returned only when the
+// entire window falls out of range.
+// ============================================================
+function sumSessionsForHours(hourlySessions, startHour, endHour) {
+    const clampedStart = Math.max(0, startHour);
+    const clampedEnd   = Math.min(23, endHour);
+
+    if (clampedStart > clampedEnd) return null; // fully out of range
+
+    // Build a quick lookup: { hour: sessions }
+    const lookup = {};
+    hourlySessions.forEach(h => { lookup[h.hour] = h.sessions; });
+
+    let total = 0;
+    for (let h = clampedStart; h <= clampedEnd; h++) {
+        total += lookup[h] || 0;
+    }
+    return total;
+}
+
+// ============================================================
+// LIFT WINDOW — Recalculate lift for all spots using the
+// current window settings and re-render only the table.
+// Called on window dropdown change; uses cached data so no
+// network request is needed.
+// ============================================================
+function recalculateLift() {
+    if (!attributionLastSpots.length && !attributionLastHourlySessions.length) return;
+
+    const windowBefore = attributionWindowBefore;
+    const windowAfter  = attributionWindowAfter;
+
+    // Rebuild spots with new sessionsBefore / sessionsAfter / lift / liftPct
+    const recalculated = attributionLastSpots.map(spot => {
+        const spotHour = airTimeToHour(spot.airTime);
+
+        let sessionsBefore = null;
+        let sessionsAfter  = null;
+        let lift           = null;
+        let liftPct        = null;
+
+        if (spotHour !== null) {
+            sessionsBefore = sumSessionsForHours(
+                attributionLastHourlySessions,
+                spotHour - windowBefore,
+                spotHour - 1
+            );
+            sessionsAfter = sumSessionsForHours(
+                attributionLastHourlySessions,
+                spotHour + 1,
+                spotHour + windowAfter
+            );
+
+            if (sessionsBefore !== null && sessionsAfter !== null) {
+                lift    = sessionsAfter - sessionsBefore;
+                liftPct = sessionsBefore > 0
+                    ? parseFloat(((lift / sessionsBefore) * 100).toFixed(1))
+                    : null;
+            }
+        }
+
+        return { ...spot, sessionsBefore, sessionsAfter, lift, liftPct };
+    });
+
+    renderLiftTable(
+        recalculated,
+        attributionLastStation,
+        attributionLastDate,
+        windowBefore,
+        windowAfter
+    );
+}
+
+// ============================================================
+// LIFT WINDOW — Render a single linked selector.
+// One dropdown controls both before and after equally so
+// comparisons are always apples-to-apples.
+// ============================================================
+function renderLiftWindowControls() {
+    const container = document.getElementById('attributionWindowControls');
+    if (!container) return;
+
+    const options = [1, 2, 3];
+
+    const optionsHTML = options.map(n =>
+        `<option value="${n}" ${n === attributionWindowBefore ? 'selected' : ''}>${n} hour${n > 1 ? 's' : ''}</option>`
+    ).join('');
+
+    container.innerHTML = `
+        <div class="lift-window-controls">
+            <span class="lift-window-label">Comparison window</span>
+            <select id="liftWindowSize" class="lift-window-select" onchange="onLiftWindowChange()">
+                ${optionsHTML}
+            </select>
+            <span class="lift-window-hint">Applied equally before and after each airing</span>
+        </div>
+    `;
+}
+
+// ============================================================
+// LIFT WINDOW — Single dropdown drives both before and after
+// ============================================================
+function onLiftWindowChange() {
+    const el = document.getElementById('liftWindowSize');
+    if (!el) return;
+
+    const val = parseInt(el.value);
+    attributionWindowBefore = val;
+    attributionWindowAfter  = val;
+
+    recalculateLift();
 }
 
 // ============================================================
@@ -319,22 +500,29 @@ function loadAttributionData(dateKey) {
 // ============================================================
 function renderAttributionData(data, station, date) {
     const hourlySessions = data.hourlySessions || [];
-    const spots          = data.spots          || [];
+    const spotsRaw       = data.spots          || [];
 
-	spots.sort((a, b) => {
-    const toMinutes = (timeStr) => {
-        if (!timeStr) return 0;
-        const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-        if (!match) return 0;
-        let hours = parseInt(match[1]);
-        const mins = parseInt(match[2]);
-        const period = match[3].toUpperCase();
-        if (period === 'AM' && hours === 12) hours = 0;
-        if (period === 'PM' && hours !== 12) hours += 12;
-        return hours * 60 + mins;
-    };
-    return toMinutes(a.airTime) - toMinutes(b.airTime);
-});
+    // Sort spots chronologically by air time
+    spotsRaw.sort((a, b) => {
+        const toMinutes = (timeStr) => {
+            if (!timeStr) return 0;
+            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (!match) return 0;
+            let hours    = parseInt(match[1]);
+            const mins   = parseInt(match[2]);
+            const period = match[3].toUpperCase();
+            if (period === 'AM' && hours === 12) hours = 0;
+            if (period === 'PM' && hours !== 12) hours += 12;
+            return hours * 60 + mins;
+        };
+        return toMinutes(a.airTime) - toMinutes(b.airTime);
+    });
+
+    // Cache for client-side lift recalculation
+    attributionLastHourlySessions = hourlySessions;
+    attributionLastSpots          = spotsRaw;
+    attributionLastStation        = station;
+    attributionLastDate           = date;
 
     const displayDate = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -343,9 +531,8 @@ function renderAttributionData(data, station, date) {
     document.getElementById('attributionChartLabel').textContent =
         `Website sessions by hour — ${station}, ${displayDate}`;
     document.getElementById('attributionChartContainer').style.display = 'block';
-    document.getElementById('attributionChartCard').style.display      = 'block';
 
-    const hours = hourlySessions.map(h => {
+    const hours    = hourlySessions.map(h => {
         const hr = h.hour;
         if (hr === 0)  return '12am';
         if (hr < 12)   return hr + 'am';
@@ -354,12 +541,12 @@ function renderAttributionData(data, station, date) {
     });
     const sessions = hourlySessions.map(h => h.sessions);
 
-    const annotations = spots.map(spot => ({
-        x:             hours[spot.hour] || '',
-        borderColor:   '#e34948',
-        borderWidth:   1.5,
+    const annotations = spotsRaw.map(spot => ({
+        x:               hours[spot.hour] || '',
+        borderColor:     '#e34948',
+        borderWidth:     1.5,
         strokeDashArray: 4,
-        label:         { show: false }
+        label:           { show: false }
     }));
 
     if (window.attributionChartInstance) {
@@ -380,35 +567,80 @@ function renderAttributionData(data, station, date) {
             annotations: { xaxis: annotations },
             grid:    { borderColor: '#f0f0f0' },
             tooltip: {
-    custom: function({ series, seriesIndex, dataPointIndex, w }) {
-        const sessions = series[seriesIndex][dataPointIndex];
-        const hoveredHour = dataPointIndex;
+                custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                    const sessions     = series[seriesIndex][dataPointIndex];
+                    const hoveredHour  = dataPointIndex;
+                    const airedSpots   = spotsRaw.filter(spot => spot.hour === hoveredHour);
 
-        const airedSpots = spots.filter(spot => spot.hour === hoveredHour);
+                    let airTimeLines = '';
+                    if (airedSpots.length > 0) {
+                        airTimeLines = airedSpots.map(spot =>
+                            `<div style="color:#e34948;font-size:0.85rem;margin-top:4px;">
+                                Air Time: ${spot.airTime}
+                            </div>`
+                        ).join('');
+                    }
 
-        let airTimeLines = '';
-        if (airedSpots.length > 0) {
-            airTimeLines = airedSpots.map(spot =>
-                `<div style="color:#e34948;font-size:0.85rem;margin-top:4px;">
-                    Air Time: ${spot.airTime}
-                </div>`
-            ).join('');
-        }
-
-        return `<div style="padding:8px 12px;font-size:0.9rem;">
-    <div style="font-weight:600;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid #e0e0e0;">${w.globals.categoryLabels[dataPointIndex]}</div>
-    <div><strong>Sessions:</strong> ${sessions}</div>
-    ${airTimeLines}
-</div>`;
-    }
-}
+                    return `<div style="padding:8px 12px;font-size:0.9rem;">
+                        <div style="font-weight:600;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid #e0e0e0;">${w.globals.categoryLabels[dataPointIndex]}</div>
+                        <div><strong>Sessions:</strong> ${sessions}</div>
+                        ${airTimeLines}
+                    </div>`;
+                }
+            }
         }
     );
     window.attributionChartInstance.render();
 
+    // Render lift window controls (preserves current selections across date changes)
+    renderLiftWindowControls();
+
+    // Calculate lift using current window settings and render the table
+    const spots = spotsRaw.map(spot => {
+        const spotHour = airTimeToHour(spot.airTime);
+
+        let sessionsBefore = null;
+        let sessionsAfter  = null;
+        let lift           = null;
+        let liftPct        = null;
+
+        if (spotHour !== null) {
+            sessionsBefore = sumSessionsForHours(hourlySessions, spotHour - attributionWindowBefore, spotHour - 1);
+            sessionsAfter  = sumSessionsForHours(hourlySessions, spotHour + 1, spotHour + attributionWindowAfter);
+
+            if (sessionsBefore !== null && sessionsAfter !== null) {
+                lift    = sessionsAfter - sessionsBefore;
+                liftPct = sessionsBefore > 0
+                    ? parseFloat(((lift / sessionsBefore) * 100).toFixed(1))
+                    : null;
+            }
+        }
+
+        return { ...spot, sessionsBefore, sessionsAfter, lift, liftPct };
+    });
+
+    renderLiftTable(spots, station, date, attributionWindowBefore, attributionWindowAfter);
+}
+
+// ============================================================
+// LIFT TABLE RENDERER
+// Separated from renderAttributionData so recalculateLift()
+// can call it independently without rebuilding the chart.
+// ============================================================
+function renderLiftTable(spots, station, date, windowBefore, windowAfter) {
+    const displayDate = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
     document.getElementById('attributionTableTitle').textContent =
         `Spot-by-spot lift — ${station}, ${displayDate}`;
     document.getElementById('attributionTableCard').style.display = 'block';
+
+    // Update column headers to reflect active window
+    const beforeHeader = document.getElementById('attributionColBefore');
+    const afterHeader  = document.getElementById('attributionColAfter');
+    if (beforeHeader) beforeHeader.textContent = `Before (${windowBefore}hr)`;
+    if (afterHeader)  afterHeader.textContent  = `After (${windowAfter}hr)`;
 
     const tbody   = document.getElementById('attributionTableBody');
     const noSpots = document.getElementById('attributionNoSpots');
@@ -420,22 +652,26 @@ function renderAttributionData(data, station, date) {
     }
 
     noSpots.style.display = 'none';
-	
+
     spots.forEach(spot => {
         const lift    = spot.lift;
         const liftPct = spot.liftPct;
         let liftClass = 'lift-neutral';
         let liftText  = 'N/A';
 
-        if (lift !== null && liftPct !== null) {
+        if (lift !== null) {
             if (lift > 0) {
                 liftClass = 'lift-positive';
-                liftText  = `+${lift} views (+${liftPct}%)`;
+                liftText  = liftPct !== null
+                    ? `+${lift} sessions (+${liftPct}%)`
+                    : `+${lift} sessions`;
             } else if (lift < 0) {
                 liftClass = 'lift-negative';
-                liftText  = `${lift} views (${liftPct}%)`;
+                liftText  = liftPct !== null
+                    ? `${lift} sessions (${liftPct}%)`
+                    : `${lift} sessions`;
             } else {
-                liftText = '0 views (0%)';
+                liftText = '0 sessions (0%)';
             }
         }
 
