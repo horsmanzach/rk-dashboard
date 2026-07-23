@@ -64,7 +64,7 @@ function enqueue_ad_dashboard_assets() {
         'ad-dashboard-script',
         get_stylesheet_directory_uri() . '/js/dashboard-script.js',
         array('gsap'),
-        '1.2.7',
+        '1.2.8',
         true
     );
 
@@ -126,7 +126,7 @@ function enqueue_attribution_panel_script() {
         'attribution-panel',
         get_stylesheet_directory_uri() . '/js/attribution-panel.js',
         array( 'jquery', 'apexcharts', 'ad-dashboard-script' ),
-        '1.2.0',
+        '1.2.4',
         true
     );
 }
