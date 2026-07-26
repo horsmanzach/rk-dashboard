@@ -364,6 +364,12 @@ function renderLeadsMetricsCard(startDate, endDate) {
         maximumFractionDigits: 2
     });
 
+	// ── Cost per lead (spend ÷ leads) ─────────────────────────
+    const costPerLead = totalLeads > 0 ? fmt$(totalSpend / totalLeads) : '—';
+    const cplMath = totalLeads > 0
+        ? `${fmt$(totalSpend)} ÷ ${totalLeads} lead${totalLeads !== 1 ? 's' : ''}`
+        : 'No leads in range';
+
     // ── Render ────────────────────────────────────────────────
     cardEl.innerHTML = `
         <div class="leads-metrics-header">
@@ -392,6 +398,15 @@ function renderLeadsMetricsCard(startDate, endDate) {
             <div class="leads-metric-card leads-metric-total">
                 <div class="leads-metric-label">Combined spend</div>
                 <div class="leads-metric-value">${fmt$(totalSpend)}</div>
+            </div>
+        </div>
+        <div class="leads-efficiency-strip">
+            <div class="leads-efficiency-label">
+                <i class="ti ti-target-arrow" aria-hidden="true"></i> Cost per lead
+            </div>
+            <div class="leads-efficiency-value">
+                <span class="leads-efficiency-amount">${costPerLead}</span>
+                <span class="leads-efficiency-math">${cplMath}</span>
             </div>
         </div>
     `;
