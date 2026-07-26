@@ -69,7 +69,7 @@ function enqueue_ad_dashboard_assets() {
     );
 
 	// Leads Panel enqueue script
-	wp_enqueue_script( 'leads-panel', get_stylesheet_directory_uri() . '/js/leads-panel.js', array('jquery', 'ad-dashboard-script', 'dashboard-chart'), '1.0.1', true );
+	wp_enqueue_script( 'leads-panel', get_stylesheet_directory_uri() . '/js/leads-panel.js', array('jquery', 'ad-dashboard-script', 'dashboard-chart'), '1.0.2', true );
 
 
     // Pass PHP variables to JS
