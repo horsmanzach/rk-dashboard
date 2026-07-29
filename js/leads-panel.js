@@ -388,13 +388,19 @@ function renderLeadsMetricsCard(startDate, endDate) {
                 <div class="leads-metric-value">${totalLeads}</div>
             </div>
             <div class="leads-metric-card">
-                <div class="leads-metric-label">Google Ads spend</div>
-                <div class="leads-metric-value">${fmt$(totalGoogle)}</div>
-            </div>
-            <div class="leads-metric-card">
-                <div class="leads-metric-label">Meta Ads spend</div>
-                <div class="leads-metric-value">${fmt$(totalMeta)}</div>
-            </div>
+    			<div class="leads-metric-label">
+        		<img src="https://dashboard.richardkimmedicine.com/wp-content/uploads/2025/12/Google-Logo-Edited.png" alt="" class="leads-metric-logo">
+       			 Google Ads spend
+    				</div>
+    	<div class="leads-metric-value">${fmt$(totalGoogle)}</div>
+		</div>
+<div class="leads-metric-card">
+    <div class="leads-metric-label">
+        <img src="https://dashboard.richardkimmedicine.com/wp-content/uploads/2025/12/Facebook-Logo-edited.png" alt="" class="leads-metric-logo">
+        Meta Ads spend
+    </div>
+    <div class="leads-metric-value">${fmt$(totalMeta)}</div>
+</div>
             <div class="leads-metric-card leads-metric-total">
                 <div class="leads-metric-label">Combined spend</div>
                 <div class="leads-metric-value">${fmt$(totalSpend)}</div>
